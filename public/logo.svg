@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <defs>
+    <linearGradient id="glowGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f472b6" /> <!-- pink-400 -->
+      <stop offset="50%" stop-color="#c084fc" /> <!-- purple-400 -->
+      <stop offset="100%" stop-color="#6366f1" /> <!-- indigo-500 -->
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <g transform="translate(50, 50)" filter="url(#glow)">
+    <!-- 8-petal abstract flower / star -->
+    <path d="M 0,-35 C 10,-15 15,-10 35,0 C 15,10 10,15 0,35 C -10,15 -15,10 -35,0 C -15,-10 -10,-15 0,-35 Z" fill="url(#glowGrad)" opacity="0.9"/>
+    
+    <!-- Inner star -->
+    <path d="M 0,-20 C 5,-8 8,-5 20,0 C 8,5 5,8 0,20 C -5,8 -8,5 -20,0 C -8,-5 -5,-8 0,-20 Z" fill="#ffffff" opacity="0.8"/>
+  </g>
+</svg>
