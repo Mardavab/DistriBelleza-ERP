@@ -6,7 +6,7 @@ import {
   Search, ShoppingCart, Trash2, AlertTriangle,
   CheckCircle, Package, Lock, Unlock, Tag,
   User as UserIcon, Calendar, Clock, DollarSign, RefreshCcw,
-  History, Eye, X, ChevronRight, TrendingUp, LogOut, Award,
+  History, Eye, X, ChevronRight, ChevronLeft, TrendingUp, LogOut, Award,
   MinusCircle, PlusCircle, CreditCard, Receipt, Percent,
   Wallet, Banknote, Smartphone, ShieldCheck, QrCode
 } from 'lucide-react';
@@ -162,19 +162,19 @@ export default function POS() {
   const defaultProductsCache = React.useRef<Record<number, { data: any[], count: number }>>({});
 
   const loadDefaultProducts = async (page: number, forceRefresh = false) => {
-    // Return cached data instantly if available
+    const PAGE_SIZE = 6;
     if (!forceRefresh && defaultProductsCache.current[page]) {
       const cached = defaultProductsCache.current[page];
       setSearchResults(cached.data);
-      setTotalPages(Math.ceil(cached.count / 8) || 1);
+      setTotalPages(Math.ceil(cached.count / PAGE_SIZE) || 1);
       setIsShowingDefaults(true);
       return;
     }
     setIsSearching(true);
-    const res = await getDefaultProducts(page, 8);
-    defaultProductsCache.current[page] = res; // Save to cache
+    const res = await getDefaultProducts(page, PAGE_SIZE);
+    defaultProductsCache.current[page] = res;
     setSearchResults(res.data);
-    setTotalPages(Math.ceil(res.count / 8) || 1);
+    setTotalPages(Math.ceil(res.count / PAGE_SIZE) || 1);
     setIsShowingDefaults(true);
     setIsSearching(false);
   };
@@ -469,23 +469,23 @@ export default function POS() {
             )}
           </div>
           {isShowingDefaults && !isSearching && totalPages > 1 && (
-            <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'center', gap: '16px', padding: '16px', marginTop: 'auto' }}>
+            <div className="pagination-area">
               <button
                 disabled={currentPage === 1}
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', background: currentPage === 1 ? '#f8fafc' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
+                className="pagination-btn"
               >
-                Anterior
+                <ChevronLeft size={18} /> Anterior
               </button>
-              <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.9rem', color: '#64748b' }}>
+              <span className="pagination-info">
                 Página {currentPage} de {totalPages}
               </span>
               <button
                 disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', background: currentPage === totalPages ? '#f8fafc' : 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
+                className="pagination-btn"
               >
-                Siguiente
+                Siguiente <ChevronRight size={18} />
               </button>
             </div>
           )}
@@ -967,7 +967,12 @@ export default function POS() {
         .search-input.no-icon { padding-left: 24px; }
         .search-input:focus { border-color: #6366f1; outline: none; }
 
-        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; min-height: 200px; }
+        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px; }
+        .pagination-area { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 20px; margin-top: auto; border-top: 1px solid #e2e8f0; background: white; border-radius: 0 0 16px 16px; position: sticky; bottom: 0; z-index: 50; }
+        .pagination-btn { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; color: #475569; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
+        .pagination-btn:hover:not(:disabled) { background: #f8fafc; border-color: #6366f1; color: #6366f1; }
+        .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; background: #f1f5f9; }
+        .pagination-info { font-size: 0.9rem; color: #64748b; font-weight: 600; }
         .product-card { background: white; padding: 16px; border-radius: 16px; border: 1px solid #e2e8f0; cursor: pointer; transition: all 0.2s; }
         .product-card:hover { transform: translateY(-4px); border-color: #6366f1; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
         .card-top { display: flex; justify-content: space-between; margin-bottom: 12px; }

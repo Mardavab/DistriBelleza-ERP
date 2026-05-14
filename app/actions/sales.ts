@@ -22,7 +22,7 @@ export async function searchPOSProducts(query: string) {
   return data as any[];
 }
 
-export async function getDefaultProducts(page: number = 1, pageSize: number = 8) {
+export async function getDefaultProducts(page: number = 1, pageSize: number = 6) {
   noStore();
   const { data, error, count } = await supabaseAdmin
     .from('product_variants')
