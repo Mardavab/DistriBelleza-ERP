@@ -563,17 +563,41 @@ export default function POS() {
               </div>
 
               <div className="cart-checkout-form">
-                <CustomSelect
-                  label="Método de Pago"
-                  value={paymentMethod}
-                  onChange={(val: any) => setPaymentMethod(val)}
-                  options={[
-                    { value: 'CASH', label: 'Efectivo', icon: <Banknote size={16} /> },
-                    { value: 'CARD', label: 'Tarjeta', icon: <CreditCard size={16} /> },
-                    { value: 'BANK_TRANSFER', label: 'Transferencia', icon: <RefreshCcw size={16} /> },
-                    { value: 'CREDIT', label: 'Crédito', icon: <ShieldCheck size={16} /> }
-                  ]}
-                />
+                <div className="checkout-row-compact">
+                  <div className="compact-col">
+                    <CustomSelect
+                      label="Pago"
+                      value={paymentMethod}
+                      onChange={(val: any) => setPaymentMethod(val)}
+                      options={[
+                        { value: 'CASH', label: 'Efectivo', icon: <Banknote size={16} /> },
+                        { value: 'CARD', label: 'Tarjeta', icon: <CreditCard size={16} /> },
+                        { value: 'BANK_TRANSFER', label: 'Transf.', icon: <RefreshCcw size={16} /> },
+                        { value: 'CREDIT', label: 'Crédito', icon: <ShieldCheck size={16} /> }
+                      ]}
+                    />
+                  </div>
+
+                  {paymentMethod === 'CASH' && (
+                    <div className="compact-col">
+                      <div className="cash-received-input">
+                        <label>Recibido</label>
+                        <div className="input-with-symbol compact">
+                          <span>$</span>
+                          <input 
+                            type="text" 
+                            placeholder="0"
+                            value={cashReceived ? Number(cashReceived).toLocaleString() : ''}
+                            onChange={(e) => {
+                              const val = e.target.value.replace(/\D/g, '');
+                              setCashReceived(val === '' ? '' : Number(val));
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {paymentMethod === 'BANK_TRANSFER' && (
                   <CustomSelect
@@ -590,23 +614,6 @@ export default function POS() {
                   />
                 )}
 
-                {paymentMethod === 'CASH' && (
-                  <div className="cash-received-input">
-                    <label>Efectivo Recibido</label>
-                    <div className="input-with-symbol">
-                      <span>$</span>
-                      <input 
-                        type="text" 
-                        placeholder="0"
-                        value={cashReceived ? Number(cashReceived).toLocaleString() : ''}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '');
-                          setCashReceived(val === '' ? '' : Number(val));
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
 
                 <div className="summary">
                   <div className="summary-row"><span>Subtotal</span><span>${calculateSubtotal().toLocaleString()}</span></div>
@@ -1005,7 +1012,9 @@ export default function POS() {
 
         .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #94a3b8; gap: 12px; }
 
-        .cart-checkout-form { padding: 20px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 16px; }
+        .cart-checkout-form { padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 10px; }
+        .checkout-row-compact { display: flex; gap: 10px; align-items: flex-start; }
+        .compact-col { flex: 1; min-width: 0; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .form-group label { font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
         .form-group select, .form-group input { padding: 10px; border-radius: 10px; border: 1px solid #e2e8f0; outline: none; background: white; font-size: 0.95rem; }
@@ -1150,12 +1159,14 @@ export default function POS() {
         .change-value { color: #10b981 !important; font-size: 1.4rem !important; font-weight: 800 !important; }
         .change-value.negative { color: #ef4444 !important; }
 
-        .cash-received-input { margin-top: 20px; margin-bottom: 20px; }
-        .cash-received-input label { display: block; font-size: 0.8rem; font-weight: 700; color: #64748b; margin-bottom: 8px; }
-        .input-with-symbol { position: relative; }
-        .input-with-symbol span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-weight: 700; }
-        .input-with-symbol input { width: 100%; padding: 12px 12px 12px 30px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 1.1rem; font-weight: 700; color: #1e293b; outline: none; }
-        .input-with-symbol input:focus { border-color: #6366f1; }
+        .payment-received-group { display: flex; gap: 8px; }
+        .cash-received-input { margin-bottom: 0; flex: 1; }
+        .cash-received-input label { display: block; font-size: 0.75rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.025em; }
+        .input-with-symbol { position: relative; display: flex; align-items: center; }
+        .input-with-symbol.compact input { height: 44px; padding: 0 12px 0 28px; font-size: 0.95rem; border-radius: 12px; font-weight: 500; }
+        .input-with-symbol.compact span { position: absolute; left: 12px; font-size: 0.95rem; color: #94a3b8; font-weight: 700; pointer-events: none; }
+        .input-with-symbol input { width: 100%; border: 1px solid #e2e8f0; outline: none; background: white; transition: all 0.2s ease; }
+        .input-with-symbol input:focus { border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
       `}</style>
     </div>
   );
