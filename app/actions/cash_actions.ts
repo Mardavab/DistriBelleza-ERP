@@ -1,13 +1,14 @@
 'use server'
 
 import { supabaseAdmin } from '../../lib/supabase';
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { createClient } from '../../lib/supabase/server';
 
 /**
  * Verifica si hay una sesión de caja abierta y calcula el total vendido.
  */
 export async function getActiveCashSession() {
+  noStore();
   try {
     const { data, error } = await supabaseAdmin
       .from('cash_sessions')
@@ -22,12 +23,33 @@ export async function getActiveCashSession() {
 
     if (!data) return null;
 
+    // Calcular el inicio del día en Colombia (UTC-5)
+    const now = new Date();
+    const colombiaOffsetMs = -5 * 60 * 60 * 1000;
+    const colombiaNow = new Date(now.getTime() + colombiaOffsetMs);
+    const todayColombiaISO = colombiaNow.toISOString().slice(0, 10);
+    const startOfDayUTC = new Date(todayColombiaISO + 'T05:00:00.000Z'); // 00:00 COT
+
+    // AUTO-CIERRE: Si la sesión se abrió en un día anterior, cerrarla automáticamente
+    if (new Date(data.opening_time) < startOfDayUTC) {
+      console.log(`Auto-cerrando sesión ${data.id} por ser de un día anterior.`);
+      await supabaseAdmin
+        .from('cash_sessions')
+        .update({ status: 'closed', closing_time: new Date().toISOString() })
+        .eq('id', data.id);
+      revalidatePath('/');
+      return null;
+    }
+
+    // Usar el máximo entre la apertura de caja y el inicio del día (aunque con el auto-cierre siempre será data.opening_time)
+    const filterStartTime = data.opening_time;
+
     // Obtener total vendido hoy para esta sesión
     const { data: salesData } = await supabaseAdmin
       .from('sales')
       .select('total_with_discount')
       .eq('status', 'completed')
-      .gte('created_at', data.opening_time);
+      .gte('created_at', filterStartTime);
 
     const totalSold = salesData?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
 
@@ -81,8 +103,10 @@ export async function openCashSession(initialFund: number) {
 
 /**
  * Obtiene el resumen de una sesión SIN CERRARLA.
+ * Incluye gastos registrados durante la sesión para el cierre de caja.
  */
 export async function getCashSessionSummary(sessionId: string) {
+  noStore();
   try {
     const { data: session } = await supabaseAdmin
       .from('cash_sessions')
@@ -92,26 +116,52 @@ export async function getCashSessionSummary(sessionId: string) {
 
     if (!session) throw new Error("No se encontró la sesión.");
 
+    // Calcular el inicio del día en Colombia (UTC-5)
+    const now = new Date();
+    const colombiaOffsetMs = -5 * 60 * 60 * 1000;
+    const colombiaNow = new Date(now.getTime() + colombiaOffsetMs);
+    const todayColombiaISO = colombiaNow.toISOString().slice(0, 10);
+    const startOfDayUTC = new Date(todayColombiaISO + 'T05:00:00.000Z');
+
+    // Filtrar desde que inició la sesión PERO solo dentro del día actual
+    const filterStartTime = new Date(session.opening_time) > startOfDayUTC 
+      ? session.opening_time 
+      : startOfDayUTC.toISOString();
+
     const { data: sales } = await supabaseAdmin
       .from('sales')
       .select('total_with_discount, payment_method')
       .eq('status', 'completed')
-      .gte('created_at', session.opening_time);
+      .gte('created_at', filterStartTime);
+
+    // Obtener gastos registrados hoy durante la sesión
+    const { data: expenses } = await supabaseAdmin
+      .from('expenses')
+      .select('amount, method')
+      .gte('created_at', filterStartTime);
 
     const totalCompletedSales = sales?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
+    const totalExpenses = expenses?.reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+    const cashExpenses = expenses?.filter(e => e.method === 'CASH').reduce((sum, e) => sum + Number(e.amount), 0) || 0;
+
     const COMMISSION_THRESHOLD = 1800000;
     const COMMISSION_RATE = 0.012; 
     
     const isCommissionEligible = totalCompletedSales > COMMISSION_THRESHOLD;
     const commissionEarned = isCommissionEligible ? (totalCompletedSales * COMMISSION_RATE) : 0;
 
+    const cashSales = sales?.filter(s => s.payment_method === 'CASH').reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
+
     return {
       success: true,
       summary: {
         totalSales: sales?.length || 0,
         totalAmount: totalCompletedSales,
-        cashSales: sales?.filter(s => s.payment_method === 'CASH').reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0,
+        cashSales,
         otherSales: sales?.filter(s => s.payment_method !== 'CASH').reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0,
+        totalExpenses,
+        cashExpenses,
+        expenseCount: expenses?.length || 0,
         commissionEarned,
         isCommissionEligible
       }

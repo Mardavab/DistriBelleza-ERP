@@ -1,18 +1,19 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import {
   Search, ShoppingCart, Trash2, AlertTriangle,
   CheckCircle, Package, Lock, Unlock, Tag,
   User as UserIcon, Calendar, Clock, DollarSign, RefreshCcw,
   History, Eye, X, ChevronRight, TrendingUp, LogOut, Award,
   MinusCircle, PlusCircle, CreditCard, Receipt, Percent,
-  Wallet, Banknote, Smartphone, ShieldCheck
+  Wallet, Banknote, Smartphone, ShieldCheck, QrCode
 } from 'lucide-react';
 import CustomSelect from '../UI/CustomSelect';
 import { searchPOSProducts, processPOSSale, POSItem, getDefaultProducts } from '../../app/actions/sales';
 import { getUserProfile } from '../../app/actions/auth';
-import { getSalesHistory } from '../../app/actions/sales_history';
+import { getSalesHistory, deleteSale } from '../../app/actions/sales_history';
 import {
   getActiveCashSession,
   openCashSession,
@@ -52,6 +53,7 @@ const SkeletonProductCard = () => (
 );
 
 export default function POS() {
+  const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -85,7 +87,7 @@ export default function POS() {
 
   // Venta state
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'CARD' | 'BANK_TRANSFER' | 'CREDIT'>('CASH');
-  const [transferType, setTransferType] = useState<'NEQUI' | 'DAVIPLATA' | 'BANCOLOMBIA' | 'OTHER'>('NEQUI');
+  const [transferType, setTransferType] = useState<'NEQUI' | 'DAVIPLATA' | 'BANCOLOMBIA' | 'OTHER' | 'QR'>('NEQUI');
   const [customerId, setCustomerId] = useState('');
   const [totalDiscount, setTotalDiscount] = useState<string | number>(0);
 
@@ -94,6 +96,8 @@ export default function POS() {
   const [initialFund, setInitialFund] = useState<string | number>('');
   const [successData, setSuccessData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
+  const [cashReceived, setCashReceived] = useState<string | number>('');
 
   const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -127,6 +131,29 @@ export default function POS() {
     if (res.success) {
       setSalesHistory(res.data || []);
       setShowHistory(true);
+    }
+    setIsLoading(false);
+  };
+
+  const handleDeleteSale = async (saleId: string) => {
+    setSaleToDelete(saleId);
+  };
+
+  const confirmDeleteSale = async () => {
+    if (!saleToDelete) return;
+
+    setIsLoading(true);
+    const res = await deleteSale(saleToDelete);
+    if (res.success) {
+      // Recargar historial
+      const historyRes = await getSalesHistory();
+      if (historyRes.success) setSalesHistory(historyRes.data || []);
+      if (selectedSale?.id === saleToDelete) setSelectedSale(null);
+      setSaleToDelete(null);
+      router.refresh();
+    } else {
+      setError("Error al eliminar venta: " + res.error);
+      setSaleToDelete(null);
     }
     setIsLoading(false);
   };
@@ -261,8 +288,10 @@ export default function POS() {
     if (res.success) {
       setExpenseDesc('');
       setExpenseAmount('');
+      // Toast rápido sin overlay bloqueante
       setShowExpenseSuccess(true);
-      setTimeout(() => setShowExpenseSuccess(false), 3000);
+      setTimeout(() => setShowExpenseSuccess(false), 2500);
+      router.refresh();
     } else {
       setError("Error al registrar gasto: " + res.error);
     }
@@ -291,7 +320,9 @@ export default function POS() {
       setCart([]);
       setCustomerId('');
       setTotalDiscount(0);
-      await loadInitialData(); // Refresh session data to update "totalSold"
+      setCashReceived('');
+      await loadInitialData(); // Refresh session data from server to be sure
+      router.refresh();
     } else {
       setError(res.error || 'Error al procesar la venta');
     }
@@ -304,21 +335,15 @@ export default function POS() {
 
   return (
     <div className="pos-container">
-      {/* GLOBAL TOAST NOTIFICATION */}
+      {/* GLOBAL TOAST NOTIFICATION - Sin overlay, tipo alerta rápida */}
       {showExpenseSuccess && (
-        <>
-          <div className="toast-overlay animate-fade-in" />
-          <div className="global-toast animate-slide-in-right">
-            <div className="toast-content">
-              <CheckCircle size={24} className="text-white" />
-              <div className="toast-text">
-                <p className="toast-title">¡Gasto Registrado!</p>
-                <p className="toast-sub">La información ha sido guardada.</p>
-              </div>
-            </div>
-            <div className="toast-progress" />
+        <div className="global-toast animate-slide-in-right">
+          <div className="toast-content">
+            <CheckCircle size={20} className="text-white" />
+            <p className="toast-title">Se registró un gasto</p>
           </div>
-        </>
+          <div className="toast-progress" />
+        </div>
       )}
 
       {/* PERCENT DISCOUNT MODAL */}
@@ -430,7 +455,10 @@ export default function POS() {
                       <span className={`stock-badge ${p.stock <= 5 ? 'low' : ''}`}>Stock: {p.stock}</span>
                     </div>
                     <h3>{p.product_name}</h3>
-                    <p className="variant">{p.variant_name}</p>
+                    <div className="card-mid">
+                      <span className="brand-tag">{p.product_brand}</span>
+                      <p className="variant">{p.variant_name}</p>
+                    </div>
                     <div className="card-footer">
                       <span className="price">${p.price.toLocaleString()}</span>
                       <button className="btn-add-quick">Añadir</button>
@@ -442,8 +470,8 @@ export default function POS() {
           </div>
           {isShowingDefaults && !isSearching && totalPages > 1 && (
             <div className="pagination-controls" style={{ display: 'flex', justifyContent: 'center', gap: '16px', padding: '16px', marginTop: 'auto' }}>
-              <button 
-                disabled={currentPage === 1} 
+              <button
+                disabled={currentPage === 1}
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', background: currentPage === 1 ? '#f8fafc' : 'white', cursor: currentPage === 1 ? 'not-allowed' : 'pointer' }}
               >
@@ -452,8 +480,8 @@ export default function POS() {
               <span style={{ display: 'flex', alignItems: 'center', fontSize: '0.9rem', color: '#64748b' }}>
                 Página {currentPage} de {totalPages}
               </span>
-              <button 
-                disabled={currentPage === totalPages} 
+              <button
+                disabled={currentPage === totalPages}
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', background: currentPage === totalPages ? '#f8fafc' : 'white', cursor: currentPage === totalPages ? 'not-allowed' : 'pointer' }}
               >
@@ -556,15 +584,42 @@ export default function POS() {
                       { value: 'NEQUI', label: 'Nequi', icon: <Smartphone size={16} /> },
                       { value: 'DAVIPLATA', label: 'Daviplata', icon: <Smartphone size={16} /> },
                       { value: 'BANCOLOMBIA', label: 'Bancolombia', icon: <Wallet size={16} /> },
+                      { value: 'QR', label: 'QR', icon: <QrCode size={16} /> },
                       { value: 'OTHER', label: 'Otro', icon: <RefreshCcw size={16} /> }
                     ]}
                   />
+                )}
+
+                {paymentMethod === 'CASH' && (
+                  <div className="cash-received-input">
+                    <label>Efectivo Recibido</label>
+                    <div className="input-with-symbol">
+                      <span>$</span>
+                      <input 
+                        type="text" 
+                        placeholder="0"
+                        value={cashReceived ? Number(cashReceived).toLocaleString() : ''}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '');
+                          setCashReceived(val === '' ? '' : Number(val));
+                        }}
+                      />
+                    </div>
+                  </div>
                 )}
 
                 <div className="summary">
                   <div className="summary-row"><span>Subtotal</span><span>${calculateSubtotal().toLocaleString()}</span></div>
                   <div className="summary-row"><span>Dsctos. Item</span><span>-${calculateItemDiscounts().toLocaleString()}</span></div>
                   <div className="summary-row total"><span>Total a Pagar</span><span>${calculateTotal().toLocaleString()}</span></div>
+                  {paymentMethod === 'CASH' && Number(cashReceived) > 0 && (
+                    <div className="summary-row change">
+                      <span>{Number(cashReceived) < calculateTotal() ? 'Faltante' : 'Cambio (Vueltas)'}</span>
+                      <span className={`change-value ${Number(cashReceived) < calculateTotal() ? 'negative' : ''}`}>
+                        ${(Number(cashReceived) - calculateTotal()).toLocaleString()}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {error && <div className="error-box"><AlertTriangle size={14} /> {error}</div>}
@@ -664,9 +719,14 @@ export default function POS() {
                         </span></td>
                         <td className="font-bold">${sale.total_with_discount.toLocaleString()}</td>
                         <td>
-                          <button className="btn-detail" onClick={() => setSelectedSale(sale)}>
-                            <Eye size={16} /> Detalle
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            <button className="btn-detail" onClick={() => setSelectedSale(sale)}>
+                              <Eye size={16} /> Detalle
+                            </button>
+                            <button className="btn-delete-history" onClick={() => handleDeleteSale(sale.id)} title="Eliminar Venta">
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -729,9 +789,20 @@ export default function POS() {
                 <span className="val-sm">${sessionSummary.otherSales.toLocaleString()}</span>
               </div>
 
+              {/* Gastos de la sesión */}
+              {sessionSummary.expenseCount > 0 && (
+                <div className="stat-row expense-row">
+                  <span>Gastos ({sessionSummary.expenseCount}):</span>
+                  <span className="val-sm danger">-${sessionSummary.totalExpenses.toLocaleString()}</span>
+                </div>
+              )}
+
               <div className="final-cash-box">
                 <label>Efectivo Esperado en Caja</label>
-                <h3>${(activeSession.initial_fund + sessionSummary.cashSales).toLocaleString()}</h3>
+                <h3>${(activeSession.initial_fund + sessionSummary.cashSales - sessionSummary.cashExpenses).toLocaleString()}</h3>
+                {sessionSummary.cashExpenses > 0 && (
+                  <p className="cash-expense-note">Fondo inicial + ventas en efectivo − gastos en efectivo</p>
+                )}
               </div>
 
               <div className={`commission-box ${sessionSummary.isCommissionEligible ? 'eligible' : ''}`}>
@@ -815,6 +886,23 @@ export default function POS() {
         </div>
       )}
 
+      {/* DELETE CONFIRMATION MODAL */}
+      {saleToDelete && (
+        <div className="modal-overlay dark-blur" onClick={() => setSaleToDelete(null)}>
+          <div className="modal-confirm-delete animate-pop" onClick={e => e.stopPropagation()}>
+            <div className="delete-icon-wrap"><Trash2 size={40} /></div>
+            <h2>¿Eliminar Venta?</h2>
+            <p>Esta acción devolverá los productos al inventario y eliminará el registro permanentemente.</p>
+            <div className="delete-modal-actions">
+              <button className="btn-cancel-delete" onClick={() => setSaleToDelete(null)}>CANCELAR</button>
+              <button className="btn-confirm-delete-final" disabled={isLoading} onClick={confirmDeleteSale}>
+                {isLoading ? 'ELIMINANDO...' : 'SÍ, ELIMINAR'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* SUCCESS MODAL */}
       {successData && (
         <div className="modal-overlay dark-blur">
@@ -832,13 +920,11 @@ export default function POS() {
       <style jsx>{`
         .pos-container { height: 100%; display: flex; flex-direction: column; background: #f1f5f9; overflow: hidden; position: relative; padding: 24px; gap: 20px; border-radius: 0; }
         
-        /* GLOBAL TOAST */
-        .toast-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.1); backdrop-filter: blur(1px); z-index: 2000; }
-        .global-toast { position: fixed; top: 24px; right: 24px; background: #10b981; color: white; border-radius: 16px; padding: 16px 24px; z-index: 2001; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.2); overflow: hidden; }
-        .toast-content { display: flex; align-items: center; gap: 16px; }
-        .toast-title { font-weight: 800; font-size: 1rem; margin: 0; }
-        .toast-sub { font-size: 0.85rem; opacity: 0.9; margin: 2px 0 0; }
-        .toast-progress { position: absolute; bottom: 0; left: 0; height: 4px; background: rgba(255,255,255,0.3); width: 100%; animation: progress 3s linear forwards; }
+        /* GLOBAL TOAST - Sin overlay bloqueante */
+        .global-toast { position: fixed; top: 24px; right: 24px; background: #10b981; color: white; border-radius: 12px; padding: 12px 20px; z-index: 9999; box-shadow: 0 8px 24px rgba(16,185,129,0.35); overflow: hidden; min-width: 220px; }
+        .toast-content { display: flex; align-items: center; gap: 10px; }
+        .toast-title { font-weight: 700; font-size: 0.95rem; margin: 0; }
+        .toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,0.4); width: 100%; animation: progress 2.5s linear forwards; }
         @keyframes progress { from { width: 100%; } to { width: 0%; } }
 
         /* PERCENT MODAL */
@@ -882,6 +968,8 @@ export default function POS() {
         .stock-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 4px; background: #f1f5f9; font-weight: 600; }
         .stock-badge.low { background: #fee2e2; color: #ef4444; }
         .product-card h3 { font-size: 0.95rem; font-weight: 700; color: #1e293b; margin: 0 0 4px; }
+        .card-mid { display: flex; flex-direction: column; gap: 2px; }
+        .brand-tag { font-size: 0.65rem; font-weight: 800; color: #6366f1; text-transform: uppercase; letter-spacing: 0.05em; }
         .variant { font-size: 0.8rem; color: #64748b; }
         .card-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; }
         .price { font-size: 1.15rem; font-weight: 800; color: #6366f1; }
@@ -993,9 +1081,12 @@ export default function POS() {
         .stat-card .label { font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; }
         .stat-card .val { font-size: 1.5rem; font-weight: 800; color: #1e293b; }
         .stat-row { display: flex; justify-content: space-between; padding: 0 8px; color: #64748b; font-size: 0.9rem; }
+        .stat-row.expense-row { color: #ef4444; }
+        .val-sm.danger { color: #ef4444; font-weight: 700; }
         .final-cash-box { margin-top: 12px; padding: 16px; background: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0; }
         .final-cash-box label { font-size: 0.8rem; font-weight: 700; color: #64748b; }
         .final-cash-box h3 { font-size: 2rem; color: #1e293b; margin: 4px 0 0; }
+        .cash-expense-note { font-size: 0.7rem; color: #94a3b8; margin: 4px 0 0; }
         .commission-box { margin-top: 16px; display: flex; align-items: center; gap: 16px; padding: 16px; background: #f8fafc; border-radius: 16px; border: 1px solid #e2e8f0; text-align: left; }
         .commission-box.eligible { background: #f0fdf4; border-color: #bbf7d0; }
         .comm-icon { width: 48px; height: 48px; background: white; border-radius: 12px; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
@@ -1040,6 +1131,31 @@ export default function POS() {
 
         .btn-close-circle { background: #f1f5f9; border: none; border-radius: 50%; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: #64748b; }
         .btn-close-circle:hover { background: #ef4444; color: white; }
+
+        .btn-delete-history { background: #fee2e2; color: #ef4444; border: none; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .btn-delete-history:hover { background: #ef4444; color: white; }
+
+        /* DELETE CONFIRM MODAL */
+        .modal-confirm-delete { background: white; padding: 40px; border-radius: 32px; max-width: 400px; width: 100%; text-align: center; }
+        .delete-icon-wrap { width: 80px; height: 80px; background: #fff1f2; color: #ef4444; border-radius: 24px; display: flex; align-items: center; justify-content: center; margin: 0 auto 24px; }
+        .modal-confirm-delete h2 { font-size: 1.5rem; color: #1e293b; margin-bottom: 12px; }
+        .modal-confirm-delete p { color: #64748b; line-height: 1.5; margin-bottom: 32px; }
+        .delete-modal-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        .btn-cancel-delete { padding: 14px; background: #f1f5f9; color: #475569; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; }
+        .btn-confirm-delete-final { padding: 14px; background: #ef4444; color: white; border: none; border-radius: 12px; font-weight: 700; cursor: pointer; }
+        .btn-confirm-delete-final:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .summary-row.change { margin-top: 12px; padding-top: 12px; border-top: 2px dashed #e2e8f0; }
+        .summary-row.change span { color: #64748b; font-weight: 600; }
+        .change-value { color: #10b981 !important; font-size: 1.4rem !important; font-weight: 800 !important; }
+        .change-value.negative { color: #ef4444 !important; }
+
+        .cash-received-input { margin-top: 20px; margin-bottom: 20px; }
+        .cash-received-input label { display: block; font-size: 0.8rem; font-weight: 700; color: #64748b; margin-bottom: 8px; }
+        .input-with-symbol { position: relative; }
+        .input-with-symbol span { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: #94a3b8; font-weight: 700; }
+        .input-with-symbol input { width: 100%; padding: 12px 12px 12px 30px; border: 1px solid #e2e8f0; border-radius: 12px; font-size: 1.1rem; font-weight: 700; color: #1e293b; outline: none; }
+        .input-with-symbol input:focus { border-color: #6366f1; }
       `}</style>
     </div>
   );

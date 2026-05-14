@@ -143,7 +143,7 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
     const isCommissionEligible = totalCompletedSales > COMMISSION_THRESHOLD;
     const commissionEarned = isCommissionEligible ? (totalCompletedSales * 0.012) : 0;
 
-    const expectedCash = (initialFund + cashFromSales + cashFromCustomers) - (cashExpenses + cashToSuppliers);
+    const expectedCash = (initialFund + cashFromSales + cashFromCustomers) - (cashExpenses + cashToSuppliers + commissionEarned);
 
     return {
       success: true,

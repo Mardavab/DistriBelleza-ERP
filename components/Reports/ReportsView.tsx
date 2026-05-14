@@ -70,7 +70,7 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(24);
     doc.setTextColor(99, 102, 241); // Indigo-500
-    doc.text('GLOW COSMETICS', 14, 25);
+    doc.text('DISTRIBELLEZA', 14, 25);
 
     doc.setFontSize(10);
     doc.setTextColor(148, 163, 184);
@@ -130,9 +130,8 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
       head: [['Tipo', 'Descripción', 'Monto']],
       body: [
         ['ENTRADA', 'Fondo Inicial de Apertura', `$${report.summary.initialFund.toLocaleString()}`],
-        ['ENTRADA', 'Recaudo Cobros a Clientes', `$${report.summary.cashFromCustomers.toLocaleString()}`],
         ['SALIDA', 'Gastos Operativos Registrados', `-$${report.summary.cashExpenses.toLocaleString()}`],
-        ['SALIDA', 'Pagos realizados a Proveedores', `-$${report.summary.cashToSuppliers.toLocaleString()}`],
+        ['SALIDA', 'Comisión del Vendedor', `-$${report.kpis.commissionEarned.toLocaleString()}`],
       ],
       headStyles: { fillColor: [15, 23, 42] },
       columnStyles: {
@@ -279,6 +278,10 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
                 <div className="audit-item danger">
                   <div className="label-group"><ArrowDownCircle size={16} /><span>Gastos</span></div>
                   <span className="val">-${(report.summary.cashExpenses + report.summary.cashToSuppliers).toLocaleString()}</span>
+                </div>
+                <div className="audit-item danger">
+                  <div className="label-group"><Award size={16} /><span>Comisión</span></div>
+                  <span className="val">-${report.kpis.commissionEarned.toLocaleString()}</span>
                 </div>
 
                 <div className="audit-footer">

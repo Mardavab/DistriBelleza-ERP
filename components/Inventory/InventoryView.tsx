@@ -477,9 +477,11 @@ export default function InventoryView() {
         .inventory-table td { padding: 16px; border-bottom: 1px solid #f1f5f9; }
         .row-hover:hover { background: #f8fafc; }
 
-        .product-name { font-weight: 600; color: #0f172a; }
-        .variant-label { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; margin-top: 2px; }
-        .brand-tag { color: #6366f1; font-weight: 600; }
+        .product-name { font-weight: 600; color: #0f172a; font-size: 1rem; }
+        .variant-label { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; margin-top: 4px; }
+        .brand-tag { color: #6366f1; font-weight: 700; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.02em; }
+        .separator { color: #cbd5e1; }
+        .variant-name { color: #64748b; font-weight: 500; }
         .category-tag { background: #eff6ff; color: #3b82f6; padding: 4px 10px; border-radius: 99px; font-size: 0.7rem; font-weight: 600; }
         .stock-status { font-weight: 600; }
         .stock-status.critical { color: #ef4444; }

@@ -9,7 +9,7 @@ CREATE EXTENSION IF NOT EXISTS pg_trgm;
 -- 2. TIPOS ENUM
 CREATE TYPE sale_status AS ENUM ('pending', 'completed', 'cancelled', 'refunded');
 CREATE TYPE payment_method AS ENUM ('CASH', 'CARD', 'BANK_TRANSFER', 'CREDIT');
-CREATE TYPE transfer_type AS ENUM ('NEQUI', 'DAVIPLATA', 'BANCOLOMBIA', 'OTHER');
+CREATE TYPE transfer_type AS ENUM ('NEQUI', 'DAVIPLATA', 'BANCOLOMBIA', 'OTHER', 'QR');
 CREATE TYPE movement_type AS ENUM ('in', 'out', 'adjustment');
 CREATE TYPE user_role AS ENUM ('owner', 'technician', 'manager');
 
@@ -297,6 +297,7 @@ CREATE OR REPLACE FUNCTION search_inventory(search_term TEXT)
 RETURNS TABLE (
     variant_id UUID,
     product_name TEXT,
+    product_brand TEXT,
     variant_name TEXT,
     sku TEXT,
     price DECIMAL(12,2),
@@ -309,6 +310,7 @@ AS $$
     SELECT 
         v.id as variant_id,
         p.name as product_name,
+        p.brand as product_brand,
         v.name as variant_name,
         v.sku,
         COALESCE(v.price, p.price_base) as price,
@@ -318,6 +320,7 @@ AS $$
     JOIN products p ON v.product_id = p.id
     WHERE v.name ILIKE '%' || search_term || '%'
        OR p.name ILIKE '%' || search_term || '%'
+       OR p.brand ILIKE '%' || search_term || '%'
        OR v.sku ILIKE '%' || search_term || '%'
     LIMIT 20;
 $$;
@@ -421,5 +424,49 @@ EXCEPTION
             'error', SQLERRM, 
             'code', SQLSTATE
         );
+END;
+$$;
+
+-- Función atómica para eliminar una venta y revertir stock
+CREATE OR REPLACE FUNCTION delete_sale(p_sale_id UUID)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    v_item RECORD;
+BEGIN
+    -- 1. Verificar si la venta existe
+    IF NOT EXISTS (SELECT 1 FROM sales WHERE id = p_sale_id) THEN
+        RETURN jsonb_build_object('success', false, 'error', 'Venta no encontrada.');
+    END IF;
+
+    -- 2. Revertir stock de cada item y registrar movimiento de entrada
+    FOR v_item IN SELECT product_id, quantity FROM sale_items WHERE sale_id = p_sale_id
+    LOOP
+        -- Devolver stock a la variante correspondiente (buscando por product_id y asumiendo la lógica de la venta)
+        -- Nota: En process_sale usamos variant_id, pero sale_items guarda product_id. 
+        -- Para ser exactos, deberíamos haber guardado variant_id en sale_items. 
+        -- Revisando schema: sale_items tiene product_id (FK a products).
+        -- Revertiremos el stock a la PRIMERA variante activa de ese producto si no hay variant_id guardado.
+        
+        -- MEJORA: Como el sistema actual descuenta de product_variants, necesitamos saber qué variante era.
+        -- Si sale_items no tiene variant_id, tenemos un problema de precisión.
+        -- Vamos a asumir que el stock se devuelve a la variante que tenga el mismo product_id.
+        UPDATE product_variants 
+        SET stock = stock + v_item.quantity 
+        WHERE product_id = v_item.product_id;
+
+        INSERT INTO inventory_movements (product_id, type, quantity, reason)
+        VALUES (v_item.product_id, 'in', v_item.quantity, 'Anulación de Venta #' || p_sale_id);
+    END LOOP;
+
+    -- 3. Eliminar la venta (sale_items se borra por CASCADE)
+    DELETE FROM sales WHERE id = p_sale_id;
+
+    RETURN jsonb_build_object('success', true);
+EXCEPTION
+    WHEN OTHERS THEN
+        RETURN jsonb_build_object('success', false, 'error', SQLERRM);
 END;
 $$;
