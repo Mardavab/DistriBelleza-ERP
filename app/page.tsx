@@ -8,6 +8,7 @@ import POS from '../components/POS/POS';
 import InventoryView from '../components/Inventory/InventoryView';
 import ReportsView from '../components/Reports/ReportsView';
 import UserManagement from '../components/UI/UserManagement';
+import SuppliersView from '../components/Suppliers/SuppliersView';
 import '../components/Dashboard/Dashboard.css';
 
 export default function Home() {
@@ -51,6 +52,8 @@ export default function Home() {
         return <POS />;
       case 'inventory':
         return <InventoryView />;
+      case 'suppliers':
+        return <SuppliersView />;
       case 'reports':
         return <ReportsView userProfile={profile} />;
       case 'config':

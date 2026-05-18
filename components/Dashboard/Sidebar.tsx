@@ -8,7 +8,8 @@ import {
   BarChart3,
   Settings,
   LogOut,
-  User
+  User,
+  Truck
 } from 'lucide-react';
 import { signOut } from '../../app/actions/auth';
 import './Dashboard.css';
@@ -26,6 +27,7 @@ export default function Sidebar({ userProfile, activeTab, setActiveTab }: Sideba
     { id: 'dashboard', name: 'Panel de Control', icon: <LayoutDashboard size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'pos', name: 'Punto de Venta', icon: <ShoppingCart size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'inventory', name: 'Inventario', icon: <Package size={20} />, roles: ['owner', 'technician', 'manager'] },
+    { id: 'suppliers', name: 'Proveedores', icon: <Truck size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'reports', name: 'Reportes', icon: <BarChart3 size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'config', name: 'Configuración', icon: <Settings size={20} />, roles: ['technician'] },
   ];
