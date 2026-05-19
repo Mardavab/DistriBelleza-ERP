@@ -28,9 +28,46 @@ export type SupplierInvoice = {
   paid_amount: number;
   status: 'pending' | 'paid' | 'overdue' | 'cancelled';
   description?: string | null;
+  billed_to?: string | null;
+  invoice_type?: 'remision' | 'electronica';
+  invoice_file_url?: string | null;
+  receipt_file_url?: string | null;
   created_at: string;
   updated_at: string;
 };
+
+// ─── HELPER: Subida de archivos ───────────────────────────────────────────────
+
+async function uploadInvoiceFile(file: File | null, prefix: string): Promise<string | null> {
+  if (!file || file.size === 0 || file.name === 'undefined') return null;
+  
+  try {
+    const fileExt = file.name.split('.').pop() || 'png';
+    const fileName = `${prefix}-${Date.now()}.${fileExt}`;
+    
+    // Convertir a array buffer para Supabase Storage en entorno de Node/Next.js
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    const { error } = await supabaseAdmin.storage
+      .from('proveedores_archivos')
+      .upload(fileName, buffer, {
+        contentType: file.type || 'image/png',
+        upsert: false
+      });
+
+    if (error) throw error;
+
+    const { data: publicUrlData } = supabaseAdmin.storage
+      .from('proveedores_archivos')
+      .getPublicUrl(fileName);
+
+    return publicUrlData.publicUrl;
+  } catch (error) {
+    console.error('Error uploading file:', error);
+    return null;
+  }
+}
 
 // ─── PROVEEDORES ──────────────────────────────────────────────────────────────
 
@@ -173,30 +210,41 @@ export async function getSupplierInvoices(): Promise<{
 /**
  * Crea una nueva factura de proveedor.
  */
-export async function createSupplierInvoice(payload: {
-  supplier_id: string;
-  invoice_number?: string;
-  issue_date: string;
-  due_date: string;
-  amount: number;
-  description?: string;
-}): Promise<{ success: boolean; data?: SupplierInvoice; error?: string }> {
+export async function createSupplierInvoice(formData: FormData): Promise<{ success: boolean; data?: SupplierInvoice; error?: string }> {
   try {
-    if (!payload.supplier_id) return { success: false, error: 'Debes seleccionar un proveedor.' };
-    if (!payload.issue_date) return { success: false, error: 'La fecha de expedición es obligatoria.' };
-    if (!payload.due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
-    if (!payload.amount || payload.amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
+    const supplier_id = formData.get('supplier_id') as string;
+    const invoice_number = formData.get('invoice_number') as string;
+    const issue_date = formData.get('issue_date') as string;
+    const due_date = formData.get('due_date') as string;
+    const amount = Number(formData.get('amount'));
+    const description = formData.get('description') as string;
+    const billed_to = formData.get('billed_to') as string;
+    const invoice_type = formData.get('invoice_type') as string;
+    const invoice_file = formData.get('invoice_file') as File | null;
+
+    if (!supplier_id) return { success: false, error: 'Debes seleccionar un proveedor.' };
+    if (!issue_date) return { success: false, error: 'La fecha de expedición es obligatoria.' };
+    if (!due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
+    if (!amount || amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
+
+    let invoice_file_url = null;
+    if (invoice_file && invoice_file.size > 0) {
+      invoice_file_url = await uploadInvoiceFile(invoice_file, 'inv');
+    }
 
     const { data, error } = await supabaseAdmin
       .from('supplier_invoices')
       .insert({
-        supplier_id: payload.supplier_id,
-        invoice_number: payload.invoice_number?.trim() || null,
-        issue_date: payload.issue_date,
-        due_date: payload.due_date,
-        amount: payload.amount,
+        supplier_id,
+        invoice_number: invoice_number?.trim() || null,
+        issue_date,
+        due_date,
+        amount,
         status: 'pending',
-        description: payload.description?.trim() || null,
+        description: description?.trim() || null,
+        billed_to: billed_to?.trim() || null,
+        invoice_type: invoice_type || 'remision',
+        invoice_file_url,
       })
       .select()
       .single();
@@ -206,6 +254,60 @@ export async function createSupplierInvoice(payload: {
     return { success: true, data };
   } catch (error: any) {
     console.error('Error creating invoice:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Actualiza una factura existente.
+ */
+export async function updateSupplierInvoice(
+  id: string,
+  formData: FormData
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const supplier_id = formData.get('supplier_id') as string;
+    const invoice_number = formData.get('invoice_number') as string;
+    const issue_date = formData.get('issue_date') as string;
+    const due_date = formData.get('due_date') as string;
+    const amount = Number(formData.get('amount'));
+    const description = formData.get('description') as string;
+    const billed_to = formData.get('billed_to') as string;
+    const invoice_type = formData.get('invoice_type') as string;
+    const invoice_file = formData.get('invoice_file') as File | null;
+
+    if (!supplier_id) return { success: false, error: 'Debes seleccionar un proveedor.' };
+    if (!issue_date) return { success: false, error: 'La fecha de expedición es obligatoria.' };
+    if (!due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
+    if (!amount || amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
+
+    const updateData: any = {
+      supplier_id,
+      invoice_number: invoice_number?.trim() || null,
+      issue_date,
+      due_date,
+      amount,
+      description: description?.trim() || null,
+      billed_to: billed_to?.trim() || null,
+      invoice_type: invoice_type || 'remision',
+      updated_at: new Date().toISOString(),
+    };
+
+    if (invoice_file && invoice_file.size > 0) {
+      const invoice_file_url = await uploadInvoiceFile(invoice_file, 'inv');
+      if (invoice_file_url) updateData.invoice_file_url = invoice_file_url;
+    }
+
+    const { error } = await supabaseAdmin
+      .from('supplier_invoices')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) throw error;
+    revalidatePath('/');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error updating invoice:', error);
     return { success: false, error: error.message };
   }
 }
@@ -245,6 +347,56 @@ export async function deleteSupplierInvoice(id: string): Promise<{ success: bool
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Marca una factura como pagada completamente, permitiendo adjuntar comprobante.
+ */
+export async function markInvoiceAsPaid(
+  id: string,
+  formData?: FormData
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    let receipt_file_url = null;
+    
+    if (formData) {
+      const receipt_file = formData.get('receipt_file') as File | null;
+      if (receipt_file && receipt_file.size > 0) {
+        receipt_file_url = await uploadInvoiceFile(receipt_file, 'rcpt');
+      }
+    }
+
+    // Obtener el total de la factura para actualizar paid_amount si es necesario
+    const { data: inv, error: fetchErr } = await supabaseAdmin
+      .from('supplier_invoices')
+      .select('amount')
+      .eq('id', id)
+      .single();
+      
+    if (fetchErr || !inv) throw fetchErr ?? new Error('Factura no encontrada.');
+
+    const updateData: any = { 
+      status: 'paid', 
+      paid_amount: inv.amount,
+      updated_at: new Date().toISOString() 
+    };
+    
+    if (receipt_file_url) {
+      updateData.receipt_file_url = receipt_file_url;
+    }
+
+    const { error } = await supabaseAdmin
+      .from('supplier_invoices')
+      .update(updateData)
+      .eq('id', id);
+
+    if (error) throw error;
+    revalidatePath('/');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error marking as paid:', error);
     return { success: false, error: error.message };
   }
 }

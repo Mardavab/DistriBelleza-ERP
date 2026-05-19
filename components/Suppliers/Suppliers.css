@@ -181,11 +181,13 @@
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .sup-table {
   width: 100%;
+  min-width: 900px; /* Garantiza que la tabla se pueda deslizar horizontalmente en lugar de aplastarse */
   border-collapse: collapse;
   font-size: 0.875rem;
 }
@@ -413,6 +415,18 @@
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
+.file-input {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  cursor: pointer;
+}
+
+.file-input:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
 .form-group textarea {
   resize: vertical;
   min-height: 80px;
@@ -541,6 +555,7 @@
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .form-row { grid-template-columns: 1fr; }
-  .sup-table th:nth-child(n+4),
-  .sup-table td:nth-child(n+4) { display: none; }
+  .suppliers-header { flex-direction: column; align-items: flex-start; }
+  .sup-toolbar { flex-direction: column; align-items: stretch; }
+  .sup-search-wrap { width: 100%; }
 }

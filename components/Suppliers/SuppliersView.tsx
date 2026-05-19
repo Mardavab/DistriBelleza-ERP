@@ -8,10 +8,12 @@ import {
 } from 'lucide-react';
 import {
   getSuppliers, createSupplier, updateSupplier, deleteSupplier,
-  getSupplierInvoices, createSupplierInvoice, updateInvoiceStatus,
-  deleteSupplierInvoice, addInvoicePayment,
+  getSupplierInvoices, createSupplierInvoice, updateSupplierInvoice, updateInvoiceStatus,
+  deleteSupplierInvoice, addInvoicePayment, markInvoiceAsPaid,
   type Supplier, type SupplierInvoice
 } from '../../app/actions/suppliers';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import './Suppliers.css';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -105,9 +107,12 @@ function SupplierModal({ initial, onClose, onSaved }: SupplierModalProps) {
     e.preventDefault();
     setLoading(true);
     setError(null);
+    const capitalizedName = form.name.trim().charAt(0).toUpperCase() + form.name.trim().slice(1);
+    const dataToSubmit = { ...form, name: capitalizedName || form.name };
+
     const res = initial
-      ? await updateSupplier(initial.id, form)
-      : await createSupplier(form);
+      ? await updateSupplier(initial.id, dataToSubmit)
+      : await createSupplier(dataToSubmit);
     setLoading(false);
     if (!res.success) { setError(res.error ?? 'Error desconocido'); return; }
     onSaved();
@@ -164,21 +169,25 @@ function SupplierModal({ initial, onClose, onSaved }: SupplierModalProps) {
 // ─── Modal: Factura ───────────────────────────────────────────────────────────
 
 type InvoiceModalProps = {
+  initial?: SupplierInvoice | null;
   suppliers: Supplier[];
   onClose: () => void;
   onSaved: () => void;
 };
 
-function InvoiceModal({ suppliers, onClose, onSaved }: InvoiceModalProps) {
+function InvoiceModal({ initial, suppliers, onClose, onSaved }: InvoiceModalProps) {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
-    supplier_id: '',
-    invoice_number: '',
-    issue_date: today,
-    due_date: '',
-    amount: '',
-    description: '',
+    supplier_id: initial?.supplier_id ?? '',
+    invoice_number: initial?.invoice_number ?? '',
+    issue_date: initial?.issue_date ?? today,
+    due_date: initial?.due_date ?? '',
+    amount: initial?.amount ? new Intl.NumberFormat('es-CO').format(initial.amount) : '',
+    description: initial?.description ?? '',
+    billed_to: initial?.billed_to ?? '',
+    invoice_type: initial?.invoice_type ?? 'remision',
   });
+  const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -189,10 +198,24 @@ function InvoiceModal({ suppliers, onClose, onSaved }: InvoiceModalProps) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    const res = await createSupplierInvoice({
-      ...form,
-      amount: parseFloat(form.amount.replace(/\./g, '').replace(',', '.')),
-    });
+
+    const fd = new FormData();
+    fd.append('supplier_id', form.supplier_id);
+    fd.append('invoice_number', form.invoice_number);
+    fd.append('issue_date', form.issue_date);
+    fd.append('due_date', form.due_date);
+    fd.append('amount', parseFloat(form.amount.replace(/\./g, '').replace(',', '.')).toString());
+    fd.append('description', form.description);
+    fd.append('billed_to', form.billed_to);
+    fd.append('invoice_type', form.invoice_type);
+    
+    if (file) {
+      fd.append('invoice_file', file);
+    }
+
+    const res = initial
+      ? await updateSupplierInvoice(initial.id, fd)
+      : await createSupplierInvoice(fd);
     setLoading(false);
     if (!res.success) { setError(res.error ?? 'Error desconocido'); return; }
     onSaved();
@@ -203,7 +226,7 @@ function InvoiceModal({ suppliers, onClose, onSaved }: InvoiceModalProps) {
       <div className="sup-modal">
         <div className="sup-modal-header">
           <div>
-            <h2>Nueva Factura de Proveedor</h2>
+            <h2>{initial ? 'Editar Factura' : 'Nueva Factura de Proveedor'}</h2>
             <p>Registra los detalles de la factura</p>
           </div>
           <button className="btn-close" onClick={onClose}><X size={20} /></button>
@@ -257,6 +280,25 @@ function InvoiceModal({ suppliers, onClose, onSaved }: InvoiceModalProps) {
             </div>
           </div>
 
+          <div className="form-row">
+            <div className="form-group">
+              <label htmlFor="inv-billed-to">A nombre de quién</label>
+              <select id="inv-billed-to" value={form.billed_to} onChange={set('billed_to')}>
+                <option value="">— Seleccionar —</option>
+                <option value="Norby">Norby</option>
+                <option value="Marlon">Marlon</option>
+                <option value="Otros">Otros</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="inv-type">Tipo de Factura</label>
+              <select id="inv-type" value={form.invoice_type} onChange={set('invoice_type')}>
+                <option value="remision">Remisión</option>
+                <option value="electronica">Electrónica</option>
+              </select>
+            </div>
+          </div>
+
           <div className="form-group">
             <label htmlFor="inv-desc">Descripción <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opcional)</span></label>
             <textarea
@@ -264,15 +306,26 @@ function InvoiceModal({ suppliers, onClose, onSaved }: InvoiceModalProps) {
               value={form.description}
               onChange={set('description')}
               placeholder="Ej: Compra de productos capilares - lote junio"
-              rows={3}
+              rows={2}
+            />
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="inv-file">Foto / Archivo de Factura <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opcional)</span></label>
+            <input 
+              type="file" 
+              id="inv-file" 
+              accept="image/*,.pdf" 
+              onChange={e => setFile(e.target.files?.[0] || null)} 
+              className="file-input"
             />
           </div>
 
           <div className="sup-modal-actions">
             <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
             <button type="submit" className="btn-primary" disabled={loading}>
-              {loading ? <RefreshCw size={16} className="spin" /> : <Plus size={16} />}
-              {loading ? 'Guardando…' : 'Registrar factura'}
+              {loading ? <RefreshCw size={16} className="spin" /> : (initial ? <Edit2 size={16} /> : <Plus size={16} />)}
+              {loading ? 'Guardando…' : (initial ? 'Actualizar factura' : 'Registrar factura')}
             </button>
           </div>
         </form>
@@ -362,6 +415,293 @@ function AbonoModal({ invoice, onClose, onSaved }: AbonoModalProps) {
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: Confirmar Pago ────────────────────────────────────────────────────
+
+type PayConfirmModalProps = {
+  invoice: SupplierInvoice;
+  onClose: () => void;
+  onSaved: () => void;
+};
+
+function PayConfirmModal({ invoice, onClose, onSaved }: PayConfirmModalProps) {
+  const [file, setFile] = useState<File | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    const fd = new FormData();
+    if (file) fd.append('receipt_file', file);
+
+    const res = await markInvoiceAsPaid(invoice.id, fd);
+    setLoading(false);
+    if (!res.success) { setError(res.error ?? 'Error desconocido'); return; }
+    onSaved();
+  };
+
+  return (
+    <div className="sup-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sup-modal" style={{ maxWidth: 450 }}>
+        <div className="sup-modal-header">
+          <div>
+            <h2>Confirmar Pago</h2>
+            <p>Factura de {invoice.supplier_name}</p>
+          </div>
+          <button className="btn-close" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        {error && <div className="sup-alert error" style={{ marginBottom: 16 }}><AlertCircle size={16} /> {error}</div>}
+
+        <form className="sup-form" onSubmit={handleSubmit}>
+          <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '8px', border: '1px solid #e2e8f0' }}>
+             <p style={{ margin: '0 0 8px 0', fontSize: '0.875rem', color: '#64748b' }}>Vas a marcar como pagada esta factura:</p>
+             <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '1.2rem' }}>{fmt(Number(invoice.amount))}</h3>
+             <p style={{ margin: 0, fontSize: '0.875rem', color: '#334155' }}>N°: {invoice.invoice_number || 'Sin número'}</p>
+          </div>
+
+          <div className="form-group">
+            <label htmlFor="rcpt-file">Comprobante de Pago <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opcional)</span></label>
+            <input 
+              type="file" 
+              id="rcpt-file" 
+              accept="image/*,.pdf" 
+              onChange={e => setFile(e.target.files?.[0] || null)} 
+              className="file-input"
+            />
+          </div>
+
+          <div className="sup-modal-actions" style={{ marginTop: '16px' }}>
+            <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="btn-primary" disabled={loading} style={{ background: '#16a34a' }}>
+              {loading ? <RefreshCw size={16} className="spin" /> : <CheckCircle size={16} />}
+              {loading ? 'Procesando…' : 'Marcar como pagada'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+// ─── Modal: Reporte PDF ───────────────────────────────────────────────────────
+
+type ReportModalProps = {
+  invoices: SupplierInvoice[];
+  onClose: () => void;
+};
+
+function ReportModal({ invoices, onClose }: ReportModalProps) {
+  const today = new Date();
+  const [reportType, setReportType] = useState<'month' | 'year'>('month');
+  const [selectedMonth, setSelectedMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+  const [selectedYear, setSelectedYear] = useState(today.getFullYear().toString());
+
+  const handleGeneratePDF = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // BACKGROUND & BRANDING
+    doc.setFillColor(248, 250, 252); // slate-50
+    doc.rect(0, 0, pageWidth, 40, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(24);
+    doc.setTextColor(99, 102, 241); // Indigo-500
+    doc.text('DISTRIBELLEZA', 14, 25);
+
+    doc.setFontSize(10);
+    doc.setTextColor(148, 163, 184);
+    doc.text('REPORTE DE PROVEEDORES Y FACTURAS', 14, 32);
+
+    const titleDate = reportType === 'month' ? selectedMonth : selectedYear;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(30, 41, 59);
+    doc.text(`Periodo: ${titleDate}`, pageWidth - 14, 25, { align: 'right' });
+    doc.text(`Generado: ${new Date().toLocaleDateString('es-CO')}`, pageWidth - 14, 32, { align: 'right' });
+
+    // Filter invoices by simple string matching (YYYY-MM or YYYY)
+    const filtered = invoices.filter(inv => {
+      if (!inv.issue_date) return false;
+      if (reportType === 'month') {
+        return inv.issue_date.startsWith(selectedMonth);
+      } else {
+        return inv.issue_date.startsWith(selectedYear);
+      }
+    });
+
+    const norby: SupplierInvoice[] = [];
+    const marlon: SupplierInvoice[] = [];
+    const otros: SupplierInvoice[] = [];
+
+    filtered.forEach(inv => {
+      const b = (inv.billed_to || '').toLowerCase();
+      if (b.includes('norby')) norby.push(inv);
+      else if (b.includes('marlon')) marlon.push(inv);
+      else otros.push(inv);
+    });
+
+    const totalNorby = norby.reduce((s, i) => s + Number(i.amount), 0);
+    const totalMarlon = marlon.reduce((s, i) => s + Number(i.amount), 0);
+    const totalOtros = otros.reduce((s, i) => s + Number(i.amount), 0);
+    const grandTotal = totalNorby + totalMarlon + totalOtros;
+
+    // CARDS SECTION
+    const cardWidth = (pageWidth - 40) / 3;
+
+    // Card 1
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(14, 50, cardWidth, 25, 3, 3, 'F');
+    doc.setFontSize(8); doc.setTextColor(59, 130, 246); doc.setFont('helvetica', 'bold');
+    doc.text('TOTAL NORBY', 18, 58);
+    doc.setFontSize(14); doc.text(`$${totalNorby.toLocaleString('es-CO')}`, 18, 68);
+
+    // Card 2
+    doc.setFillColor(240, 253, 244);
+    doc.roundedRect(14 + cardWidth + 6, 50, cardWidth, 25, 3, 3, 'F');
+    doc.setFontSize(8); doc.setTextColor(22, 163, 74); 
+    doc.text('TOTAL MARLON', 18 + cardWidth + 6, 58);
+    doc.setFontSize(14); doc.text(`$${totalMarlon.toLocaleString('es-CO')}`, 18 + cardWidth + 6, 68);
+
+    // Card 3
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(14 + (cardWidth * 2) + 12, 50, cardWidth, 25, 3, 3, 'F');
+    doc.setFontSize(8); doc.setTextColor(100, 116, 139); 
+    doc.text('TOTAL OTROS', 18 + (cardWidth * 2) + 12, 58);
+    doc.setFontSize(14); doc.text(`$${totalOtros.toLocaleString('es-CO')}`, 18 + (cardWidth * 2) + 12, 68);
+
+    let startY = 85;
+
+    const renderGroup = (title: string, data: SupplierInvoice[]) => {
+      if (data.length === 0) return;
+      doc.setFontSize(12);
+      doc.setTextColor(30, 41, 59);
+      doc.setFont('helvetica', 'bold');
+      doc.text(title, 14, startY);
+      
+      autoTable(doc, {
+        startY: startY + 5,
+        head: [['Proveedor', 'N° Factura', 'Expedición', 'Valor', 'Estado']],
+        body: data.map(i => [
+          i.supplier_name ?? '-',
+          i.invoice_number || '-',
+          fmtDate(i.issue_date),
+          `$${Number(i.amount).toLocaleString('es-CO')}`,
+          STATUS_LABELS[i.status] ?? i.status
+        ]),
+        headStyles: { fillColor: [99, 102, 241] },
+        margin: { left: 14, right: 14 },
+      });
+      startY = (doc as any).lastAutoTable.finalY + 15;
+      
+      if (startY > 250) {
+        doc.addPage();
+        startY = 20;
+      }
+    };
+
+    renderGroup('Detalle Facturas: Norby', norby);
+    renderGroup('Detalle Facturas: Marlon', marlon);
+    renderGroup('Detalle Facturas: Otros', otros);
+
+    // FINAL SUMMARY BOX
+    const lastY = startY;
+    if (lastY > 260) { doc.addPage(); startY = 20; }
+    
+    doc.setFillColor(15, 23, 42);
+    doc.roundedRect(14, lastY, pageWidth - 28, 25, 4, 4, 'F');
+
+    doc.setTextColor(148, 163, 184);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.text('TOTAL GENERAL ACUMULADO (TODAS LAS FACTURAS)', 24, lastY + 10);
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text(`$${grandTotal.toLocaleString('es-CO')}`, 24, lastY + 20);
+
+    // Footer
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    doc.text('Distri Belleza ERP - Reporte generado automáticamente.', pageWidth / 2, 285, { align: 'center' });
+
+    doc.save(`Reporte_Proveedores_${titleDate}.pdf`);
+    onClose();
+  };
+
+  return (
+    <div className="sup-modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="sup-modal" style={{ maxWidth: 400 }}>
+        <div className="sup-modal-header">
+          <div>
+            <h2>Generar Reporte PDF</h2>
+            <p>Agrupado por Norby, Marlon y Otros</p>
+          </div>
+          <button className="btn-close" onClick={onClose}><X size={20} /></button>
+        </div>
+
+        <div className="sup-form">
+          <div className="form-group">
+            <label>Tipo de Reporte</label>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button 
+                type="button"
+                onClick={() => setReportType('month')}
+                className={reportType === 'month' ? 'btn-primary' : 'btn-secondary'}
+                style={{ flex: 1 }}
+              >Mes</button>
+              <button 
+                type="button"
+                onClick={() => setReportType('year')}
+                className={reportType === 'year' ? 'btn-primary' : 'btn-secondary'}
+                style={{ flex: 1 }}
+              >Año</button>
+            </div>
+          </div>
+
+          {reportType === 'month' ? (
+            <div className="form-group">
+              <label htmlFor="rep-month">Día del Mes Deseado</label>
+              <input 
+                id="rep-month" 
+                type="date" 
+                value={selectedMonth ? `${selectedMonth}-01` : ''} 
+                onChange={e => {
+                  if (e.target.value) setSelectedMonth(e.target.value.substring(0, 7));
+                }} 
+              />
+              <span style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 4, display: 'block' }}>Selecciona cualquier fecha para indicar el mes.</span>
+            </div>
+          ) : (
+            <div className="form-group">
+              <label htmlFor="rep-year">Año</label>
+              <select 
+                id="rep-year" 
+                value={selectedYear} 
+                onChange={e => setSelectedYear(e.target.value)} 
+              >
+                {Array.from({ length: 11 }, (_, i) => new Date().getFullYear() - 5 + i).map(y => (
+                  <option key={y} value={y}>{y}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <div className="sup-modal-actions" style={{ marginTop: 16 }}>
+            <button className="btn-secondary" onClick={onClose}>Cancelar</button>
+            <button className="btn-primary" onClick={handleGeneratePDF}>
+              <FileText size={16} /> Descargar PDF
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -487,7 +827,8 @@ function SuppliersTab({ suppliers, loading, onRefresh }: { suppliers: Supplier[]
 function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: SupplierInvoice[]; suppliers: Supplier[]; loading: boolean; onRefresh: () => void }) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [showModal, setShowModal] = useState(false);
+  const [modal, setModal] = useState<null | 'new' | SupplierInvoice>(null);
+  const [sortDueDate, setSortDueDate] = useState<'asc' | 'desc' | null>(null);
 
   const filtered = useMemo(() => {
     let list = invoices.map(inv => ({
@@ -500,17 +841,20 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
       (i.invoice_number ?? '').toLowerCase().includes(search.toLowerCase()) ||
       (i.description ?? '').toLowerCase().includes(search.toLowerCase())
     );
+    if (sortDueDate) {
+      list.sort((a, b) => {
+        const da = new Date(a.due_date).getTime();
+        const db = new Date(b.due_date).getTime();
+        return sortDueDate === 'asc' ? da - db : db - da;
+      });
+    }
     return list;
-  }, [invoices, statusFilter, search]);
+  }, [invoices, statusFilter, search, sortDueDate]);
 
   const [abonoInvoice, setAbonoInvoice] = useState<SupplierInvoice | null>(null);
+  const [payInvoice, setPayInvoice] = useState<SupplierInvoice | null>(null);
   const [confirmInvoice, setConfirmInvoice] = useState<SupplierInvoice | null>(null);
   const [deletingInv, setDeletingInv] = useState(false);
-
-  const handleMarkPaid = async (id: string) => {
-    await updateInvoiceStatus(id, 'paid');
-    onRefresh();
-  };
 
   const handleDeleteConfirmed = async () => {
     if (!confirmInvoice) return;
@@ -541,7 +885,7 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
           <option value="overdue">Vencidas</option>
           <option value="cancelled">Canceladas</option>
         </select>
-        <button className="btn-primary" id="btn-new-invoice" onClick={() => setShowModal(true)}>
+        <button className="btn-primary" id="btn-new-invoice" onClick={() => setModal('new')}>
           <Plus size={16} /> Nueva Factura
         </button>
       </div>
@@ -562,7 +906,12 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
                 <th>Proveedor</th>
                 <th>N° Factura</th>
                 <th>Expedición</th>
-                <th>Vencimiento</th>
+                <th 
+                  style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setSortDueDate(prev => prev === 'asc' ? 'desc' : prev === 'desc' ? null : 'asc')}
+                >
+                  Vencimiento {sortDueDate === 'asc' ? '↑' : sortDueDate === 'desc' ? '↓' : ''}
+                </th>
                 <th>Valor</th>
                 <th>Estado</th>
                 <th>Descripción</th>
@@ -577,11 +926,19 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
                       <div style={{ width: 30, height: 30, borderRadius: 6, background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Truck size={14} color="#7c3aed" />
                       </div>
-                      <span style={{ fontWeight: 500 }}>{inv.supplier_name}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontWeight: 500 }}>{inv.supplier_name}</span>
+                        {inv.billed_to && <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Para: {inv.billed_to}</span>}
+                      </div>
                     </div>
                   </td>
                   <td style={{ fontFamily: 'monospace', fontSize: '0.8rem', color: '#6366f1' }}>
-                    {inv.invoice_number ?? <span style={{ color: '#cbd5e1' }}>—</span>}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                      <span>{inv.invoice_number ?? <span style={{ color: '#cbd5e1' }}>—</span>}</span>
+                      <span style={{ fontSize: '0.65rem', padding: '2px 6px', borderRadius: 4, background: inv.invoice_type === 'electronica' ? '#dbeafe' : '#f1f5f9', color: inv.invoice_type === 'electronica' ? '#1d4ed8' : '#475569', width: 'fit-content' }}>
+                        {inv.invoice_type === 'electronica' ? 'Electrónica' : 'Remisión'}
+                      </span>
+                    </div>
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(inv.issue_date)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
@@ -603,15 +960,24 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
                   <td><StatusBadge status={inv.status} dueDate={inv.due_date} /></td>
                   <td style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#64748b', fontSize: '0.8rem' }}>
                     {inv.description ?? <span style={{ color: '#cbd5e1' }}>—</span>}
+                    {(inv.invoice_file_url || inv.receipt_file_url) && (
+                      <div style={{ marginTop: '6px', display: 'flex', gap: '8px', fontSize: '0.75rem' }}>
+                        {inv.invoice_file_url && <a href={inv.invoice_file_url} target="_blank" rel="noreferrer" style={{ color: '#6366f1', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FileText size={12}/> Factura</a>}
+                        {inv.receipt_file_url && <a href={inv.receipt_file_url} target="_blank" rel="noreferrer" style={{ color: '#16a34a', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}><FileText size={12}/> Comprobante</a>}
+                      </div>
+                    )}
                   </td>
                   <td>
                     <div className="row-actions" style={{ justifyContent: 'flex-end' }}>
+                      <button className="icon-btn" title="Editar" onClick={() => setModal(inv)}>
+                        <Edit2 size={14} />
+                      </button>
                       {inv.effectiveStatus !== 'paid' && inv.effectiveStatus !== 'cancelled' && (
                         <>
                           <button className="icon-btn abono" title="Registrar abono" onClick={() => setAbonoInvoice(inv)}>
                             <CreditCard size={14} />
                           </button>
-                          <button className="icon-btn success" title="Marcar como pagada completa" onClick={() => handleMarkPaid(inv.id)}>
+                          <button className="icon-btn success" title="Marcar como pagada completa" onClick={() => setPayInvoice(inv)}>
                             <CheckCircle size={14} />
                           </button>
                         </>
@@ -628,11 +994,12 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
         )}
       </div>
 
-      {showModal && (
+      {modal && (
         <InvoiceModal
+          initial={modal === 'new' ? null : modal as SupplierInvoice}
           suppliers={suppliers}
-          onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); onRefresh(); }}
+          onClose={() => setModal(null)}
+          onSaved={() => { setModal(null); onRefresh(); }}
         />
       )}
       {abonoInvoice && (
@@ -640,6 +1007,13 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
           invoice={abonoInvoice}
           onClose={() => setAbonoInvoice(null)}
           onSaved={() => { setAbonoInvoice(null); onRefresh(); }}
+        />
+      )}
+      {payInvoice && (
+        <PayConfirmModal
+          invoice={payInvoice}
+          onClose={() => setPayInvoice(null)}
+          onSaved={() => { setPayInvoice(null); onRefresh(); }}
         />
       )}
       {confirmInvoice && (
@@ -665,6 +1039,7 @@ export default function SuppliersView() {
   const [invoices, setInvoices]   = useState<SupplierInvoice[]>([]);
   const [loadingS, setLoadingS]   = useState(true);
   const [loadingI, setLoadingI]   = useState(true);
+  const [showReportModal, setShowReportModal] = useState(false);
 
   const loadSuppliers = async () => {
     setLoadingS(true);
@@ -691,11 +1066,18 @@ export default function SuppliersView() {
   return (
     <div className="suppliers-root">
       {/* Header */}
-      <div className="suppliers-header">
+      <div className="suppliers-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div className="suppliers-title-block">
           <h1>Proveedores</h1>
           <p>Gestiona tus proveedores y el seguimiento de facturas</p>
         </div>
+        <button 
+          className="btn-secondary" 
+          onClick={() => setShowReportModal(true)} 
+          style={{ color: '#0f172a', background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: 40 }}
+        >
+          <FileText size={16} color="#6366f1" /> Generar Reporte
+        </button>
       </div>
 
       {/* KPIs */}
@@ -760,6 +1142,10 @@ export default function SuppliersView() {
         <SuppliersTab suppliers={suppliers} loading={loadingS} onRefresh={loadSuppliers} />
       ) : (
         <InvoicesTab invoices={invoices} suppliers={suppliers} loading={loadingI} onRefresh={loadInvoices} />
+      )}
+
+      {showReportModal && (
+        <ReportModal invoices={invoices} onClose={() => setShowReportModal(false)} />
       )}
     </div>
   );
