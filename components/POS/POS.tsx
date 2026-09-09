@@ -3,11 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  Search, ShoppingCart, Trash2, AlertTriangle,
-  CheckCircle, Package, Lock, Unlock, Tag,
+  ShoppingCart, Trash2, AlertTriangle,
+  CheckCircle, Lock, Unlock,
   User as UserIcon, Calendar, Clock, DollarSign, RefreshCcw,
   History, Eye, X, ChevronRight, ChevronLeft, TrendingUp, LogOut, Award,
-  MinusCircle, PlusCircle, CreditCard, Receipt, Percent,
+  MinusCircle, CreditCard, Receipt, Percent,
   Wallet, Banknote, Smartphone, ShieldCheck, QrCode
 } from 'lucide-react';
 import CustomSelect from '../UI/CustomSelect';
@@ -106,12 +106,6 @@ export default function POS() {
   const [totalPages, setTotalPages] = useState(1);
   const [isShowingDefaults, setIsShowingDefaults] = useState(false);
 
-  useEffect(() => {
-    loadInitialData();
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
   const loadInitialData = async () => {
     setIsLoading(true);
     const [session, profile] = await Promise.all([
@@ -124,6 +118,12 @@ export default function POS() {
     else setShowOpenSession(false);
     setIsLoading(false);
   };
+
+  useEffect(() => {
+    loadInitialData();
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const loadHistory = async () => {
     setIsLoading(true);
@@ -190,7 +190,7 @@ export default function POS() {
       } else {
         loadDefaultProducts(currentPage);
       }
-    }, 500); // Increased debounce to 500ms
+    }, 300);
     return () => clearTimeout(delayDebounceFn);
   }, [searchTerm, currentPage]);
 

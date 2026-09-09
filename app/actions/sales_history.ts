@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '../../lib/supabase';
 import { unstable_noStore as noStore, revalidatePath } from 'next/cache';
+import { getColombiaToday } from '../../lib/timezone';
 
 /**
  * Obtiene el historial de ventas recientes.
@@ -10,11 +11,7 @@ export async function getSalesHistory() {
   noStore();
   try {
     // Calcular el inicio del día en Colombia (UTC-5)
-    const now = new Date();
-    const colombiaOffsetMs = -5 * 60 * 60 * 1000;
-    const colombiaNow = new Date(now.getTime() + colombiaOffsetMs);
-    // Midnight en Colombia
-    const todayColombiaISO = colombiaNow.toISOString().slice(0, 10);
+    const todayColombiaISO = getColombiaToday();
     const startOfDayUTC = new Date(todayColombiaISO + 'T05:00:00.000Z'); // 00:00 COT = 05:00 UTC
 
     const { data, error } = await supabaseAdmin

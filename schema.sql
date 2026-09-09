@@ -61,7 +61,7 @@ CREATE TABLE products (
     name VARCHAR(200) NOT NULL,
     brand VARCHAR(100) NOT NULL, -- Marca del producto
     category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
-    price_base INTEGER, -- Precio heredable en COP
+    price_base DECIMAL(12,2), -- Precio heredable en COP
     active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -75,7 +75,7 @@ CREATE TABLE product_variants (
     sku VARCHAR(100) UNIQUE NOT NULL,
     barcode VARCHAR(100) UNIQUE, -- Código de barras único
     stock INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
-    price INTEGER, -- Precio propio. Si es NULL hereda price_base
+    price DECIMAL(12,2), -- Precio propio. Si es NULL hereda price_base
     active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -122,6 +122,7 @@ CREATE TABLE sale_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     sale_id UUID REFERENCES sales(id) ON DELETE CASCADE,
     product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+    variant_id UUID REFERENCES product_variants(id) ON DELETE SET NULL,
     quantity INTEGER NOT NULL CHECK (quantity > 0),
     unit_price DECIMAL(12,2) NOT NULL,
     discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0,
@@ -318,10 +319,10 @@ AS $$
         v.updated_at
     FROM product_variants v
     JOIN products p ON v.product_id = p.id
-    WHERE v.name ILIKE '%' || search_term || '%'
-       OR p.name ILIKE '%' || search_term || '%'
-       OR p.brand ILIKE '%' || search_term || '%'
-       OR v.sku ILIKE '%' || search_term || '%'
+    WHERE v.name % search_term
+       OR p.name % search_term
+       OR p.brand % search_term
+       OR v.sku % search_term
     LIMIT 20;
 $$;
 
@@ -390,8 +391,8 @@ BEGIN
 
         UPDATE product_variants SET stock = stock - v_item.quantity WHERE id = v_item.variant_id;
 
-        INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, discount_amount)
-        VALUES (v_sale_id, v_product_id, v_item.quantity, v_effective_price, COALESCE(v_item.discount, 0));
+        INSERT INTO sale_items (sale_id, product_id, variant_id, quantity, unit_price, discount_amount)
+        VALUES (v_sale_id, v_product_id, v_item.variant_id, v_item.quantity, v_effective_price, COALESCE(v_item.discount, 0));
 
         INSERT INTO inventory_movements (product_id, type, quantity, reason)
         VALUES (v_product_id, 'out', v_item.quantity, 'Venta #' || v_sale_id);
@@ -442,20 +443,12 @@ BEGIN
     END IF;
 
     -- 2. Revertir stock de cada item y registrar movimiento de entrada
-    FOR v_item IN SELECT product_id, quantity FROM sale_items WHERE sale_id = p_sale_id
+    FOR v_item IN SELECT product_id, variant_id, quantity FROM sale_items WHERE sale_id = p_sale_id
     LOOP
-        -- Devolver stock a la variante correspondiente (buscando por product_id y asumiendo la lógica de la venta)
-        -- Nota: En process_sale usamos variant_id, pero sale_items guarda product_id. 
-        -- Para ser exactos, deberíamos haber guardado variant_id en sale_items. 
-        -- Revisando schema: sale_items tiene product_id (FK a products).
-        -- Revertiremos el stock a la PRIMERA variante activa de ese producto si no hay variant_id guardado.
-        
-        -- MEJORA: Como el sistema actual descuenta de product_variants, necesitamos saber qué variante era.
-        -- Si sale_items no tiene variant_id, tenemos un problema de precisión.
-        -- Vamos a asumir que el stock se devuelve a la variante que tenga el mismo product_id.
+        -- Devolver stock a la variante exacta que fue descontada
         UPDATE product_variants 
         SET stock = stock + v_item.quantity 
-        WHERE product_id = v_item.product_id;
+        WHERE id = v_item.variant_id;
 
         INSERT INTO inventory_movements (product_id, type, quantity, reason)
         VALUES (v_item.product_id, 'in', v_item.quantity, 'Anulación de Venta #' || p_sale_id);

@@ -2,6 +2,7 @@
 
 import { createClient } from '../../lib/supabase/server';
 import { supabaseAdmin } from '../../lib/supabase';
+import { getColombiaToday, getColombiaDayRange } from '../../lib/timezone';
 
 export interface FinancialReport {
   success: boolean;
@@ -45,9 +46,7 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
     const userRole = profile?.role || user.app_metadata?.role || user.user_metadata?.role || 'manager';
     
     // Usar fecha local de Colombia (UTC-5) para determinar "Hoy"
-    const now = new Date();
-    const colTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
-    const today = colTime.toISOString().split('T')[0];
+    const today = getColombiaToday();
     
     const targetDate = date || today;
 
@@ -58,13 +57,8 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
       throw new Error(`Solo tienes permiso para ver el informe del día actual. (Rol detectado: ${userRole})`);
     }
 
-    // Ajustar rangos para considerar el desfase de Colombia (UTC-5)
-    // El día en Colombia empieza a las 05:00:00 UTC y termina a las 04:59:59 UTC del día siguiente
-    const start = new Date(`${targetDate}T00:00:00-05:00`);
-    const end = new Date(`${targetDate}T23:59:59-05:00`);
-    
-    const startOfDay = start.toISOString();
-    const endOfDay = end.toISOString();
+    // Obtener rangos del día en zona horaria de Colombia
+    const { start: startOfDay, end: endOfDay } = getColombiaDayRange(targetDate);
 
     // 2. Obtener Fondo Inicial
     const { data: session } = await supabaseAdmin
@@ -176,9 +170,7 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
  * Obtiene estadísticas rápidas para el Dashboard
  */
 export async function getDashboardStats() {
-    const now = new Date();
-    const colTime = new Date(now.getTime() - (5 * 60 * 60 * 1000));
-    const today = colTime.toISOString().split('T')[0];
+    const today = getColombiaToday();
     const report = await getFinancialReport(today);
     
     if (!report.success) return null;

@@ -1,6 +1,7 @@
 'use server'
 
 import { supabaseAdmin } from '../../lib/supabase';
+import { createClient } from '../../lib/supabase/server';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 
 export interface POSItem {
@@ -49,8 +50,6 @@ export async function getDefaultProducts(page: number = 1, pageSize: number = 6)
 
   return { data: formattedData, count: count || 0 };
 }
-
-import { createClient } from '../../lib/supabase/server';
 
 export async function processPOSSale(
   customerId: string | null,

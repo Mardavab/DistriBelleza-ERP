@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from 'react';
 import { 
   AlertCircle, Plus, X, Package, Trash2, Edit3, 
-  Search, Filter, Check, ChevronLeft, ChevronRight, 
-  RefreshCcw, AlertTriangle 
+  Filter, Check, ChevronLeft, ChevronRight, 
+  RefreshCcw, AlertTriangle, Layers 
 } from 'lucide-react';
 import { 
   getInventory, 
@@ -15,7 +15,6 @@ import {
   createCategory
 } from '../../app/actions/inventory_actions';
 import CustomSelect from '../UI/CustomSelect';
-import { Layers } from 'lucide-react';
 
 // SKELETON COMPONENT
 const SkeletonRow = () => (

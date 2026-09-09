@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState } from 'react';
-import { Calendar, FileText, Download, AlertCircle, TrendingUp, DollarSign, Wallet, ArrowDownCircle, ArrowUpCircle, Award, CreditCard, RefreshCcw, ShieldCheck, PieChart } from 'lucide-react';
+import { Calendar, FileText, Download, AlertCircle, TrendingUp, DollarSign, ArrowDownCircle, ArrowUpCircle, Award, CreditCard, RefreshCcw, ShieldCheck, PieChart } from 'lucide-react';
 import { getFinancialReport, FinancialReport } from '../../app/actions/reports';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -46,16 +46,16 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
   });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadReport();
-  }, [date]);
-
   async function loadReport() {
     setLoading(true);
     const data = await getFinancialReport(date);
     setReport(data);
     setLoading(false);
   }
+
+  useEffect(() => {
+    loadReport();
+  }, [date]);
 
   const exportPDF = () => {
     if (!report || !report.success) return;
