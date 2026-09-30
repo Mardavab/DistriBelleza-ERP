@@ -9,7 +9,8 @@ import {
   Settings,
   LogOut,
   User,
-  Truck
+  Truck,
+  Building2
 } from 'lucide-react';
 import { signOut } from '../../app/actions/auth';
 import './Dashboard.css';
@@ -28,6 +29,7 @@ export default function Sidebar({ userProfile, activeTab, setActiveTab }: Sideba
     { id: 'pos', name: 'Punto de Venta', icon: <ShoppingCart size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'inventory', name: 'Inventario', icon: <Package size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'suppliers', name: 'Proveedores', icon: <Truck size={20} />, roles: ['owner', 'technician', 'manager'] },
+    { id: 'major-expenses', name: 'Gastos Mayores', icon: <Building2 size={20} />, roles: ['owner'] },
     { id: 'reports', name: 'Reportes', icon: <BarChart3 size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'config', name: 'Configuración', icon: <Settings size={20} />, roles: ['technician'] },
   ];

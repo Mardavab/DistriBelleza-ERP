@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ShoppingCart, Trash2, AlertTriangle,
@@ -8,7 +8,7 @@ import {
   User as UserIcon, Calendar, Clock, DollarSign, RefreshCcw,
   History, Eye, X, ChevronRight, ChevronLeft, TrendingUp, LogOut, Award,
   MinusCircle, CreditCard, Receipt, Percent,
-  Wallet, Banknote, Smartphone, ShieldCheck, QrCode
+  Wallet, Banknote, Smartphone, ShieldCheck, QrCode, Zap, Building2
 } from 'lucide-react';
 import CustomSelect from '../UI/CustomSelect';
 import { searchPOSProducts, processPOSSale, POSItem, getDefaultProducts } from '../../app/actions/sales';
@@ -21,6 +21,8 @@ import {
   closeCashSession,
   addExpense
 } from '../../app/actions/cash_actions';
+import PrintReceipt, { ReceiptData } from './PrintReceipt';
+import { PRINT_SERVICE_URL } from '../../lib/constants';
 import './POS.css';
 
 interface CartItem extends POSItem {
@@ -37,23 +39,23 @@ const SkeletonStatus = () => (
   </div>
 );
 
-const SkeletonProductCard = () => (
-  <div className="product-card skeleton-effect" style={{ pointerEvents: 'none' }}>
-    <div className="card-top">
-      <div className="skeleton-box" style={{ width: '60px', height: '14px' }}></div>
-      <div className="skeleton-box" style={{ width: '50px', height: '14px' }}></div>
+const SkeletonProductRow = () => (
+  <div className="product-row skeleton-effect" style={{ pointerEvents: 'none' }}>
+    <div className="skeleton-box" style={{ width: '80px', height: '14px' }}></div>
+    <div className="product-info" style={{ flex: 1 }}>
+      <div className="skeleton-box" style={{ width: '60%', height: '14px', marginBottom: '4px' }}></div>
+      <div className="skeleton-box" style={{ width: '40%', height: '12px' }}></div>
     </div>
-    <div className="skeleton-box" style={{ width: '80%', height: '18px', margin: '8px 0' }}></div>
-    <div className="skeleton-box" style={{ width: '50%', height: '14px' }}></div>
-    <div className="card-footer" style={{ marginTop: '16px' }}>
-      <div className="skeleton-box" style={{ width: '70px', height: '24px' }}></div>
-      <div className="skeleton-box" style={{ width: '60px', height: '24px' }}></div>
-    </div>
+    <div className="skeleton-box" style={{ width: '60px', height: '14px' }}></div>
+    <div className="skeleton-box" style={{ width: '50px', height: '14px' }}></div>
+    <div className="skeleton-box" style={{ width: '70px', height: '14px' }}></div>
+    <div className="skeleton-box" style={{ width: '50px', height: '24px' }}></div>
   </div>
 );
 
 export default function POS() {
   const router = useRouter();
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -62,8 +64,13 @@ export default function POS() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Barcode & feedback states
+  const [showProductAdded, setShowProductAdded] = useState(false);
+  const [addedProductName, setAddedProductName] = useState('');
+  const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   // Tabs state
-  const [activeTab, setActiveTab] = useState<'cart' | 'expenses'>('cart');
+  const [activeTab, setActiveTab] = useState<'cart' | 'expenses' | 'major'>('cart');
 
   // History state
   const [showHistory, setShowHistory] = useState(false);
@@ -95,6 +102,7 @@ export default function POS() {
   const [showOpenSession, setShowOpenSession] = useState(false);
   const [initialFund, setInitialFund] = useState<string | number>('');
   const [successData, setSuccessData] = useState<any>(null);
+  const [receiptData, setReceiptData] = useState<ReceiptData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saleToDelete, setSaleToDelete] = useState<string | null>(null);
   const [cashReceived, setCashReceived] = useState<string | number>('');
@@ -102,8 +110,6 @@ export default function POS() {
   const [currentTime, setCurrentTime] = useState(new Date());
 
   // Pagination for Default Products
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
   const [isShowingDefaults, setIsShowingDefaults] = useState(false);
 
   const loadInitialData = async () => {
@@ -124,6 +130,34 @@ export default function POS() {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showOpenSession || showHistory || showCloseModal || showPercentModal || successData) return;
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === 'F4') {
+        e.preventDefault();
+        if (cart.length > 0 && activeSession && !isLoading) {
+          handleCheckout();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [cart, activeSession, isLoading, showOpenSession, showHistory, showCloseModal, showPercentModal, successData]);
+
+  // Auto-focus on search input when session becomes available
+  useEffect(() => {
+    if (activeSession && !isLoading) {
+      const timer = setTimeout(() => searchInputRef.current?.focus(), 100);
+      return () => clearTimeout(timer);
+    }
+  }, [activeSession, isLoading]);
 
   const loadHistory = async () => {
     setIsLoading(true);
@@ -161,40 +195,35 @@ export default function POS() {
   // Simple in-memory cache for default products pages
   const defaultProductsCache = React.useRef<Record<number, { data: any[], count: number }>>({});
 
-  const loadDefaultProducts = async (page: number, forceRefresh = false) => {
-    const PAGE_SIZE = 6;
-    if (!forceRefresh && defaultProductsCache.current[page]) {
-      const cached = defaultProductsCache.current[page];
+  const loadDefaultProducts = async (forceRefresh = false) => {
+    if (!forceRefresh && defaultProductsCache.current[1]) {
+      const cached = defaultProductsCache.current[1];
       setSearchResults(cached.data);
-      setTotalPages(Math.ceil(cached.count / PAGE_SIZE) || 1);
       setIsShowingDefaults(true);
       return;
     }
     setIsSearching(true);
-    const res = await getDefaultProducts(page, PAGE_SIZE);
-    defaultProductsCache.current[page] = res;
+    const res = await getDefaultProducts(1, 200);
+    defaultProductsCache.current[1] = res;
     setSearchResults(res.data);
-    setTotalPages(Math.ceil(res.count / PAGE_SIZE) || 1);
     setIsShowingDefaults(true);
     setIsSearching(false);
   };
 
-  useEffect(() => {
-    const delayDebounceFn = setTimeout(async () => {
-      if (searchTerm.length >= 2) {
-        setIsSearching(true);
-        setIsShowingDefaults(false);
-        const results = await searchPOSProducts(searchTerm);
-        setSearchResults(results);
-        setIsSearching(false);
-      } else {
-        loadDefaultProducts(currentPage);
-      }
-    }, 300);
-    return () => clearTimeout(delayDebounceFn);
-  }, [searchTerm, currentPage]);
+  const refreshSearchResults = useCallback(async () => {
+    if (searchTerm.length >= 2) {
+      setIsSearching(true);
+      const results = await searchPOSProducts(searchTerm);
+      setSearchResults(results);
+      setIsSearching(false);
+    } else if (isShowingDefaults) {
+      loadDefaultProducts(true);
+    }
+  }, [searchTerm, isShowingDefaults]);
 
-  const addToCart = (product: any) => {
+  const isBarcode = (value: string): boolean => /^\d{13}$/.test(value);
+
+  const addToCart = useCallback((product: any) => {
     setActiveTab('cart');
     setCart(prev => {
       const existing = prev.find(item => item.variant_id === product.variant_id);
@@ -214,7 +243,44 @@ export default function POS() {
         expected_updated_at: product.updated_at
       }];
     });
-  };
+    setAddedProductName(product.product_name);
+    setShowProductAdded(true);
+    setTimeout(() => setShowProductAdded(false), 2000);
+    searchInputRef.current?.focus();
+  }, []);
+
+  const handleBarcodeScan = useCallback(async (code: string) => {
+    const results = await searchPOSProducts(code);
+    if (results.length === 1) {
+      addToCart(results[0]);
+      setAddedProductName(results[0].product_name);
+      setShowProductAdded(true);
+      setTimeout(() => setShowProductAdded(false), 2000);
+      setSearchTerm('');
+    } else if (results.length > 1) {
+      setSearchResults(results);
+      setIsShowingDefaults(false);
+    }
+  }, [addToCart]);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (searchTerm.length >= 2) {
+        if (isBarcode(searchTerm)) {
+          handleBarcodeScan(searchTerm);
+          return;
+        }
+        setIsSearching(true);
+        setIsShowingDefaults(false);
+        const results = await searchPOSProducts(searchTerm);
+        setSearchResults(results);
+        setIsSearching(false);
+      } else {
+        loadDefaultProducts();
+      }
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchTerm]);
 
   const updateItemDiscount = (id: string, discount: number) => {
     setCart(prev => prev.map(item => item.variant_id === id ? { ...item, discount } : item));
@@ -317,12 +383,21 @@ export default function POS() {
 
     if (res.success) {
       setSuccessData(res);
+      if (res.receipt) {
+        setReceiptData({ ...res.receipt, openDrawer: paymentMethod === 'CASH' });
+      }
       setCart([]);
       setCustomerId('');
       setTotalDiscount(0);
       setCashReceived('');
-      await loadInitialData(); // Refresh session data from server to be sure
+      await loadInitialData();
+      await refreshSearchResults();
       router.refresh();
+
+      // Auto-open cash drawer for CASH payments
+      if (paymentMethod === 'CASH') {
+        fetch(`${PRINT_SERVICE_URL}/open-drawer`, { method: 'POST' }).catch(() => {});
+      }
     } else {
       setError(res.error || 'Error al procesar la venta');
     }
@@ -341,6 +416,17 @@ export default function POS() {
           <div className="toast-content">
             <CheckCircle size={20} className="text-white" />
             <p className="toast-title">Se registró un gasto</p>
+          </div>
+          <div className="toast-progress" />
+        </div>
+      )}
+
+      {/* PRODUCT ADDED TOAST */}
+      {showProductAdded && (
+        <div className="global-toast product-added-toast animate-slide-in-right">
+          <div className="toast-content">
+            <Zap size={20} className="text-white" />
+            <p className="toast-title">{addedProductName} agregado</p>
           </div>
           <div className="toast-progress" />
         </div>
@@ -421,8 +507,9 @@ export default function POS() {
           <div className="search-section">
             <div className="search-input-wrapper">
               <input
+                ref={searchInputRef}
                 type="text"
-                placeholder="Escanea o busca productos..."
+                placeholder="Escanea código de barras o busca por nombre..."
                 className="search-input no-icon"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -432,13 +519,14 @@ export default function POS() {
             </div>
           </div>
 
-          <div className="results-grid">
+          <div className="results-list">
             {isSearching ? (
               <>
-                <SkeletonProductCard />
-                <SkeletonProductCard />
-                <SkeletonProductCard />
-                <SkeletonProductCard />
+                <SkeletonProductRow />
+                <SkeletonProductRow />
+                <SkeletonProductRow />
+                <SkeletonProductRow />
+                <SkeletonProductRow />
               </>
             ) : (
               <>
@@ -449,46 +537,21 @@ export default function POS() {
                   </div>
                 )}
                 {searchResults.map(p => (
-                  <div key={p.variant_id} className="product-card" onClick={() => addToCart(p)}>
-                    <div className="card-top">
-                      <span className="sku">{p.sku}</span>
-                      <span className={`stock-badge ${p.stock <= 5 ? 'low' : ''}`}>Stock: {p.stock}</span>
+                  <div key={p.variant_id} className="product-row" onClick={() => addToCart(p)}>
+                    <span className="sku">{p.sku}</span>
+                    <div className="product-info">
+                      <span className="product-name">{p.product_name}</span>
+                      <span className="variant-name">{p.variant_name}</span>
                     </div>
-                    <h3>{p.product_name}</h3>
-                    <div className="card-mid">
-                      <span className="brand-tag">{p.product_brand}</span>
-                      <p className="variant">{p.variant_name}</p>
-                    </div>
-                    <div className="card-footer">
-                      <span className="price">${p.price.toLocaleString()}</span>
-                      <button className="btn-add-quick">Añadir</button>
-                    </div>
+                    <span className="brand-tag">{p.product_brand}</span>
+                    <span className={`stock-badge ${p.stock <= 5 ? 'low' : ''}`}>Stock: {p.stock}</span>
+                    <span className="price">${p.price.toLocaleString()}</span>
+                    <button className="btn-add-quick">Añadir</button>
                   </div>
                 ))}
               </>
             )}
           </div>
-          {isShowingDefaults && !isSearching && totalPages > 1 && (
-            <div className="pagination-area">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                className="pagination-btn"
-              >
-                <ChevronLeft size={18} /> Anterior
-              </button>
-              <span className="pagination-info">
-                Página {currentPage} de {totalPages}
-              </span>
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                className="pagination-btn"
-              >
-                Siguiente <ChevronRight size={18} />
-              </button>
-            </div>
-          )}
         </main>
 
         <aside className="pos-sidebar">
@@ -513,43 +576,41 @@ export default function POS() {
               <div className="cart-list">
                 {cart.map(item => (
                   <div key={item.variant_id} className="cart-item">
-                    <div className="item-main">
+                    <div className="cart-item-main">
                       <div className="item-desc">
                         <p className="name">{item.product_name}</p>
-                        <p className="sub">{item.variant_name}</p>
+                        <p className="sub">{item.variant_name} · ${(item.price).toLocaleString()} c/u</p>
                       </div>
                       <span className="item-price">${(item.price * item.quantity).toLocaleString()}</span>
                     </div>
-                    <div className="item-actions">
-                      <div className="qty-control">
+                    <div className="cart-item-actions">
+                      <div className="qty-controls">
+                        <button className="qty-btn" onClick={() => {
+                          if (item.quantity > 1) {
+                            setCart(prev => prev.map(i => i.variant_id === item.variant_id ? { ...i, quantity: i.quantity - 1 } : i));
+                          }
+                        }}>-</button>
                         <input
                           type="number"
                           value={item.quantity === 0 ? '' : item.quantity}
-                          onFocus={() => {
-                            setCart(prev => prev.map(i => i.variant_id === item.variant_id ? { ...i, quantity: 0 } : i));
-                          }}
-                          onBlur={() => {
-                            if (!item.quantity) {
-                              setCart(prev => prev.map(i => i.variant_id === item.variant_id ? { ...i, quantity: 1 } : i));
-                            }
-                          }}
                           onChange={(e) => {
-                            const valStr = e.target.value;
-                            const val = valStr === '' ? 0 : parseInt(valStr);
-                            setCart(prev => prev.map(i => i.variant_id === item.variant_id ? { ...i, quantity: isNaN(val) ? 0 : val } : i));
+                            const val = parseInt(e.target.value);
+                            setCart(prev => prev.map(i => i.variant_id === item.variant_id ? { ...i, quantity: isNaN(val) || val < 1 ? 1 : val } : i));
                           }}
+                          min="1"
                         />
+                        <button className="qty-btn" onClick={() => {
+                          setCart(prev => prev.map(i => i.variant_id === item.variant_id ? { ...i, quantity: i.quantity + 1 } : i));
+                        }}>+</button>
                       </div>
-                      <div className="discount-area">
-                        <button className="btn-percent-only" title="Aplicar Descuento %" onClick={() => setShowPercentModal(item.variant_id)}>
-                          <Percent size={14} /> <span>Dto.</span>
-                        </button>
-                        {item.discount > 0 && (
-                          <span className="discount-applied">-${item.discount.toLocaleString()}</span>
-                        )}
-                      </div>
-                      <button className="btn-remove" onClick={() => removeFromCart(item.variant_id)}>
-                        <Trash2 size={16} />
+                      <button className="btn-percent-inline" title="Descuento %" onClick={() => setShowPercentModal(item.variant_id)}>
+                        <Percent size={12} />
+                      </button>
+                      {item.discount > 0 && (
+                        <span className="discount-applied">-${item.discount.toLocaleString()}</span>
+                      )}
+                      <button className="btn-remove-inline" onClick={() => removeFromCart(item.variant_id)}>
+                        <Trash2 size={14} />
                       </button>
                     </div>
                   </div>
@@ -558,6 +619,7 @@ export default function POS() {
                   <div className="empty-state">
                     <Receipt size={40} />
                     <p>El carrito está vacío</p>
+                    <p className="empty-hint">Escanea o busca productos para agregar</p>
                   </div>
                 )}
               </div>
@@ -636,7 +698,7 @@ export default function POS() {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : activeTab === 'expenses' ? (
             <div className="expenses-container animate-in">
               <div className="expense-form-header">
                 <MinusCircle className="text-danger" size={24} />
@@ -683,7 +745,7 @@ export default function POS() {
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
         </aside>
       </div>
 
@@ -917,21 +979,30 @@ export default function POS() {
             <div className="success-icon"><CheckCircle size={60} /></div>
             <h2>¡Venta Exitosa!</h2>
             <p>Venta #{successData.saleId?.slice(0, 8) || 'Nueva'} ha sido registrada con éxito.</p>
+            {receiptData && (
+              <div style={{ width: '100%', marginTop: '12px' }}>
+                <PrintReceipt
+                  saleData={receiptData}
+                  onDone={() => setReceiptData(null)}
+                />
+              </div>
+            )}
             <div className="success-actions">
-              <button className="btn-continue" onClick={() => setSuccessData(null)}>NUEVA VENTA</button>
+              <button className="btn-continue" onClick={() => { setSuccessData(null); setReceiptData(null); }}>NUEVA VENTA</button>
             </div>
           </div>
         </div>
       )}
 
       <style jsx>{`
-        .pos-container { height: 100%; display: flex; flex-direction: column; background: #f1f5f9; overflow: hidden; position: relative; padding: 24px; gap: 20px; border-radius: 0; }
+        .pos-container { height: 100vh; display: flex; flex-direction: column; background: #f1f5f9; overflow: hidden; position: relative; padding: 16px; gap: 12px; border-radius: 0; }
         
         /* GLOBAL TOAST - Sin overlay bloqueante */
         .global-toast { position: fixed; top: 24px; right: 24px; background: #10b981; color: white; border-radius: 12px; padding: 12px 20px; z-index: 9999; box-shadow: 0 8px 24px rgba(16,185,129,0.35); overflow: hidden; min-width: 220px; }
+        .global-toast.product-added-toast { background: #6366f1; box-shadow: 0 8px 24px rgba(99,102,241,0.35); }
         .toast-content { display: flex; align-items: center; gap: 10px; }
-        .toast-title { font-weight: 700; font-size: 0.95rem; margin: 0; }
-        .toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,0.4); width: 100%; animation: progress 2.5s linear forwards; }
+        .toast-title { font-weight: 700; font-size: 0.9rem; margin: 0; }
+        .toast-progress { position: absolute; bottom: 0; left: 0; height: 3px; background: rgba(255,255,255,0.4); width: 100%; animation: progress 2s linear forwards; }
         @keyframes progress { from { width: 100%; } to { width: 0%; } }
 
         /* PERCENT MODAL */
@@ -959,16 +1030,30 @@ export default function POS() {
         .btn-close-session:hover:not(:disabled) { background: #ef4444; color: white; }
         .btn-close-session:disabled { opacity: 0.5; cursor: not-allowed; }
 
-        .pos-grid { display: grid; grid-template-columns: 1fr 400px; flex: 1; overflow: hidden; gap: 20px; }
+        .pos-grid { display: grid; grid-template-columns: 1fr 360px; flex: 1; overflow: hidden; gap: 16px; }
         
-        .pos-main { padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+        .pos-main { padding: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
         .search-input-wrapper { position: relative; width: 100%; }
-        .search-input { width: 100%; padding: 16px 24px; border-radius: 16px; border: 1px solid #e2e8f0; font-size: 1.1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
-        .search-input.no-icon { padding-left: 24px; }
-        .search-input:focus { border-color: #6366f1; outline: none; }
+        .search-input { width: 100%; padding: 14px 16px; border-radius: 12px; border: 2px solid #e2e8f0; font-size: 1rem; box-shadow: 0 2px 4px rgba(0,0,0,0.04); transition: all 0.2s; }
+        .search-input:focus { border-color: #6366f1; outline: none; box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1); }
 
-        .results-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 20px; }
-        .pagination-area { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 20px; margin-top: auto; border-top: 1px solid #e2e8f0; background: white; border-radius: 0 0 16px 16px; position: sticky; bottom: 0; z-index: 50; }
+        .results-list { display: flex; flex-direction: column; gap: 0; background: white; border-radius: 10px; border: 1px solid #e2e8f0; overflow: hidden; flex: 1; min-height: 0; }
+        .results-list-header { display: grid; grid-template-columns: 90px 1fr 70px 60px 80px 55px; gap: 8px; padding: 8px 12px; background: #f8fafc; border-bottom: 2px solid #e2e8f0; font-size: 0.65rem; font-weight: 700; color: #64748b; text-transform: uppercase; }
+        .product-row { display: grid; grid-template-columns: 90px 1fr 70px 60px 80px 55px; gap: 8px; padding: 10px 12px; align-items: center; border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: all 0.1s; min-height: 44px; }
+        .product-row:hover { background: #f5f3ff; }
+        .product-row:active { background: #ede9fe; }
+        .product-info { display: flex; flex-direction: column; min-width: 0; }
+        .product-name { font-size: 0.85rem; font-weight: 600; color: #1e293b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .variant-name { font-size: 0.7rem; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sku { font-size: 0.65rem; color: #94a3b8; font-family: monospace; }
+        .brand-tag { font-size: 0.6rem; font-weight: 700; color: #6366f1; text-transform: uppercase; }
+        .stock-badge { font-size: 0.65rem; padding: 2px 5px; border-radius: 4px; background: #f1f5f9; font-weight: 600; text-align: center; }
+        .stock-badge.low { background: #fee2e2; color: #ef4444; }
+        .product-row .price { font-size: 0.85rem; font-weight: 700; color: #6366f1; text-align: right; }
+        .btn-add-quick { font-size: 0.65rem; background: #6366f1; color: white; border: none; padding: 5px 10px; border-radius: 5px; font-weight: 600; cursor: pointer; transition: all 0.1s; }
+        .btn-add-quick:hover { background: #4f46e5; }
+
+        .pagination-area { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 12px; margin-top: auto; border-top: 1px solid #e2e8f0; background: white; border-radius: 0 0 12px 12px; position: sticky; bottom: 0; z-index: 50; }
         .pagination-btn { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-radius: 10px; border: 1px solid #e2e8f0; background: white; color: #475569; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; }
         .pagination-btn:hover:not(:disabled) { background: #f8fafc; border-color: #6366f1; color: #6366f1; }
         .pagination-btn:disabled { opacity: 0.5; cursor: not-allowed; background: #f1f5f9; }
@@ -987,35 +1072,42 @@ export default function POS() {
         .price { font-size: 1.15rem; font-weight: 800; color: #6366f1; }
         .btn-add-quick { font-size: 0.75rem; background: #f5f3ff; color: #6366f1; border: none; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
 
-        .pos-sidebar { background: white; border-radius: 20px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); }
+        .pos-sidebar { background: white; border-radius: 16px; border: 1px solid #e2e8f0; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
         .sidebar-tabs { display: grid; grid-template-columns: 1fr 1fr; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
-        .tab-btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px; border: none; background: none; font-size: 0.9rem; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.2s; position: relative; }
+        .sidebar-tabs.three-tabs { grid-template-columns: 1fr 1fr 1fr; }
+        .tab-btn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 8px; border: none; background: none; font-size: 0.8rem; font-weight: 600; color: #64748b; cursor: pointer; transition: all 0.2s; position: relative; white-space: nowrap; }
         .tab-btn.active { color: #6366f1; background: white; }
         .tab-btn.active::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: #6366f1; }
         .tab-badge { font-size: 0.7rem; background: #6366f1; color: white; padding: 2px 6px; border-radius: 10px; }
 
-        .cart-container, .expenses-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+        .cart-container, .expenses-container, .major-expenses-container { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
         .animate-in { animation: fadeIn 0.3s ease; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-        .cart-list { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
-        .cart-item { background: #f8fafc; border-radius: 12px; padding: 12px; border: 1px solid #f1f5f9; }
-        .item-main { display: flex; justify-content: space-between; margin-bottom: 8px; }
-        .name { font-size: 0.9rem; font-weight: 600; color: #1e293b; margin: 0; }
-        .sub { font-size: 0.75rem; color: #64748b; margin: 0; }
-        .item-price { font-weight: 700; color: #1e293b; font-size: 0.9rem; }
-        .item-actions { display: flex; align-items: center; gap: 8px; }
-        .qty-control input { width: 45px; padding: 4px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.8rem; text-align: center; }
+        .cart-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+        .cart-item { background: #f8fafc; border-radius: 8px; padding: 10px 12px; border: 1px solid #f1f5f9; }
+        .cart-item-main { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .item-desc { flex: 1; min-width: 0; }
+        .name { font-size: 0.85rem; font-weight: 600; color: #1e293b; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sub { font-size: 0.7rem; color: #64748b; margin: 0; }
+        .item-price { font-weight: 700; color: #1e293b; font-size: 0.85rem; margin-left: 8px; }
+        .cart-item-actions { display: flex; align-items: center; gap: 6px; }
+        .qty-controls { display: flex; align-items: center; gap: 0; background: white; border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; }
+        .qty-btn { width: 28px; height: 28px; border: none; background: #f8fafc; color: #475569; font-size: 1rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+        .qty-btn:hover { background: #e2e8f0; }
+        .qty-btn:active { background: #cbd5e1; }
+        .qty-controls input { width: 36px; height: 28px; border: none; border-left: 1px solid #e2e8f0; border-right: 1px solid #e2e8f0; text-align: center; font-size: 0.8rem; font-weight: 600; outline: none; -moz-appearance: textfield; }
+        .qty-controls input::-webkit-outer-spin-button,
+        .qty-controls input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
         
-        .discount-area { display: flex; align-items: center; gap: 8px; flex: 1; }
-        .btn-percent-only { background: #f5f3ff; color: #6366f1; border: 1px solid #e0e7ff; padding: 6px 12px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 0.75rem; transition: all 0.2s; }
-        .btn-percent-only:hover { background: #6366f1; color: white; border-color: #6366f1; }
-        .discount-applied { font-size: 0.75rem; color: #ef4444; font-weight: 700; background: #fee2e2; padding: 2px 6px; border-radius: 4px; }
+        .btn-percent-inline { background: #f5f3ff; color: #6366f1; border: 1px solid #e0e7ff; padding: 4px 6px; border-radius: 4px; cursor: pointer; display: flex; align-items: center; transition: all 0.15s; }
+        .btn-percent-inline:hover { background: #6366f1; color: white; }
+        .discount-applied { font-size: 0.7rem; color: #ef4444; font-weight: 700; background: #fee2e2; padding: 2px 4px; border-radius: 4px; }
+        .btn-remove-inline { padding: 4px; color: #94a3b8; background: none; border: none; cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+        .btn-remove-inline:hover { color: #ef4444; background: #fee2e2; }
 
-        .btn-remove { padding: 6px; color: #94a3b8; background: none; border: none; cursor: pointer; }
-        .btn-remove:hover { color: #ef4444; }
-
-        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #94a3b8; gap: 12px; }
+        .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #94a3b8; gap: 8px; padding: 24px; }
+        .empty-hint { font-size: 0.75rem; color: #cbd5e1; margin: 0; }
 
         .cart-checkout-form { padding: 12px 16px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; gap: 10px; }
         .checkout-row-compact { display: flex; gap: 10px; align-items: flex-start; }
@@ -1045,6 +1137,37 @@ export default function POS() {
         .btn-save-expense { background: #ef4444; color: white; border: none; padding: 16px; border-radius: 12px; font-weight: 700; cursor: pointer; transition: all 0.2s; margin-top: 8px; }
         .btn-save-expense:hover:not(:disabled) { background: #dc2626; transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.3); }
         .btn-save-expense:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* MAJOR EXPENSES STYLES */
+        .major-expenses-container { padding: 16px; display: flex; flex-direction: column; height: 100%; }
+        .major-header { text-align: center; margin-bottom: 16px; }
+        .major-header h3 { margin: 8px 0 4px; font-size: 1rem; color: #1e293b; }
+        .major-header p { font-size: 0.75rem; color: #64748b; margin: 0; }
+        .text-primary { color: #6366f1; }
+        .btn-add-major { width: 100%; padding: 12px; background: #6366f1; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 0.85rem; cursor: pointer; transition: all 0.2s; margin-bottom: 12px; }
+        .btn-add-major:hover { background: #4f46e5; }
+        .major-form { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 12px; }
+        .btn-save-major { background: #10b981; color: white; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+        .btn-save-major:hover:not(:disabled) { background: #059669; }
+        .btn-save-major:disabled { opacity: 0.5; cursor: not-allowed; }
+        .major-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+        .empty-major { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: #94a3b8; gap: 8px; }
+        .major-item { background: #f8fafc; border-radius: 10px; padding: 12px; border: 1px solid #f1f5f9; }
+        .major-item-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .major-category-badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 4px; font-weight: 700; text-transform: uppercase; }
+        .major-category-badge.rent { background: #fee2e2; color: #ef4444; }
+        .major-category-badge.utilities { background: #dbeafe; color: #2563eb; }
+        .major-category-badge.payroll { background: #f3e8ff; color: #9333ea; }
+        .major-category-badge.maintenance { background: #ffedd5; color: #ea580c; }
+        .major-category-badge.insurance { background: #d1fae5; color: #059669; }
+        .major-category-badge.taxes { background: #fef3c7; color: #d97706; }
+        .major-category-badge.other { background: #f1f5f9; color: #64748b; }
+        .major-date { font-size: 0.7rem; color: #94a3b8; }
+        .major-desc { font-size: 0.85rem; color: #1e293b; margin: 0 0 6px; font-weight: 500; }
+        .major-item-footer { display: flex; justify-content: space-between; align-items: center; }
+        .major-amount { font-size: 1rem; font-weight: 800; color: #ef4444; }
+        .btn-delete-major { padding: 4px; color: #94a3b8; background: none; border: none; cursor: pointer; border-radius: 4px; transition: all 0.15s; }
+        .btn-delete-major:hover { color: #ef4444; background: #fee2e2; }
 
         /* SKELETON STYLES */
         .skeleton-box { background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%); background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: 6px; }

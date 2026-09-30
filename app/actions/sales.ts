@@ -23,7 +23,7 @@ export async function searchPOSProducts(query: string) {
   return data as any[];
 }
 
-export async function getDefaultProducts(page: number = 1, pageSize: number = 6) {
+export async function getDefaultProducts(page: number = 1, pageSize: number = 200) {
   noStore();
   const { data, error, count } = await supabaseAdmin
     .from('product_variants')
@@ -87,11 +87,47 @@ export async function processPOSSale(
       return { success: false, error: result.error };
     }
 
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user?.id)
+      .maybeSingle();
+
+    const { data: saleDetail } = await supabaseAdmin
+      .from('sales')
+      .select('total_amount, discount_amount, total_with_discount, paid_amount, created_at')
+      .eq('id', result.sale_id)
+      .single();
+
+    const { data: saleItems } = await supabaseAdmin
+      .from('sale_items')
+      .select('quantity, unit_price, discount_amount, products(name)')
+      .eq('sale_id', result.sale_id);
+
+    const receiptItems = (saleItems || []).map((si: any) => ({
+      productName: si.products?.name || 'Producto',
+      quantity: si.quantity,
+      unitPrice: Number(si.unit_price),
+      discount: Number(si.discount_amount || 0),
+    }));
+
     return {
       success: true,
       saleId: result.sale_id,
       paid: result.paid,
-      message: 'Venta exitosa.'
+      message: 'Venta exitosa.',
+      receipt: {
+        saleId: result.sale_id,
+        createdAt: saleDetail?.created_at || new Date().toISOString(),
+        cashier: profile?.full_name || user?.email || '',
+        items: receiptItems,
+        subtotal: Number(saleDetail?.total_amount || 0),
+        totalDiscount: Number(saleDetail?.discount_amount || 0),
+        total: Number(saleDetail?.total_with_discount || 0),
+        paymentMethod,
+        transferType: transferType || undefined,
+        cashReceived: paymentMethod === 'CASH' ? Number(result.paid) : undefined,
+      }
     };
 
   } catch (err: any) {

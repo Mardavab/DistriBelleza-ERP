@@ -9,6 +9,7 @@ import InventoryView from '../components/Inventory/InventoryView';
 import ReportsView from '../components/Reports/ReportsView';
 import UserManagement from '../components/UI/UserManagement';
 import SuppliersView from '../components/Suppliers/SuppliersView';
+import MajorExpensesView from '../components/MajorExpenses/MajorExpensesView';
 import '../components/Dashboard/Dashboard.css';
 
 export default function Home() {
@@ -56,6 +57,8 @@ export default function Home() {
         return <SuppliersView />;
       case 'reports':
         return <ReportsView userProfile={profile} />;
+      case 'major-expenses':
+        return <MajorExpensesView />;
       case 'config':
         return (profile?.role === 'technician') 
           ? <UserManagement currentUserRole={profile?.role} /> 

@@ -168,6 +168,34 @@ CREATE TABLE supplier_payments (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Tipo enum para categorías de gastos mayores
+CREATE TYPE major_expense_category AS ENUM (
+    'RENT',           -- Arriendo
+    'UTILITIES',      -- Servicios públicos (agua, luz, gas, internet)
+    'PAYROLL',        -- Nómina
+    'MAINTENANCE',    -- Mantenimiento
+    'INSURANCE',      -- Seguros
+    'TAXES',          -- Impuestos
+    'OTHER'           -- Otros
+);
+
+-- Gastos Mayores (Solo owner y technician pueden ver, solo owner puede registrar)
+CREATE TABLE major_expenses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    category major_expense_category NOT NULL,
+    description TEXT NOT NULL,
+    amount DECIMAL(12,2) NOT NULL CHECK (amount > 0),
+    expense_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    notes TEXT,
+    created_by UUID REFERENCES auth.users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TRIGGER tr_major_expenses_updated_at 
+BEFORE UPDATE ON major_expenses 
+FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
 -- Perfiles de Usuario (RBAC)
 CREATE TABLE profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
