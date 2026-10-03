@@ -3,17 +3,24 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '../../lib/supabase/server';
 import { revalidatePath } from 'next/cache';
+import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 
 export async function getMajorExpenses() {
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { data, error } = await supabaseAdmin
       .from('major_expenses')
       .select('*')
+      .eq('company_id', companyId)
       .order('expense_date', { ascending: false });
 
     if (error) throw error;
     return { success: true, data };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.', data: [] };
+    }
     console.error("Error fetching major expenses:", error);
     return { success: false, error: error.message, data: [] };
   }
@@ -32,7 +39,6 @@ export async function addMajorExpense(
 
     if (!user) return { success: false, error: 'No se encontró una sesión de usuario válida.' };
 
-    // Verify user is owner
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('role')
@@ -43,9 +49,12 @@ export async function addMajorExpense(
       return { success: false, error: 'Solo el propietario puede registrar gastos mayores.' };
     }
 
+    const companyId = await getCurrentCompanyId();
+
     const { error } = await supabaseAdmin
       .from('major_expenses')
       .insert({
+        company_id: companyId,
         category,
         description,
         amount,
@@ -58,6 +67,9 @@ export async function addMajorExpense(
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error("Error adding major expense:", error);
     return { success: false, error: error.message };
   }
@@ -70,7 +82,6 @@ export async function deleteMajorExpense(id: string) {
 
     if (!user) return { success: false, error: 'No se encontró una sesión de usuario válida.' };
 
-    // Verify user is owner
     const { data: profile } = await supabaseAdmin
       .from('profiles')
       .select('role')
@@ -81,15 +92,21 @@ export async function deleteMajorExpense(id: string) {
       return { success: false, error: 'Solo el propietario puede eliminar gastos mayores.' };
     }
 
+    const companyId = await getCurrentCompanyId();
+
     const { error } = await supabaseAdmin
       .from('major_expenses')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error("Error deleting major expense:", error);
     return { success: false, error: error.message };
   }

@@ -1,19 +1,24 @@
 import type { Metadata } from "next";
+import { getCurrentCompanySafe } from "../lib/company";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  title: "Distri Belleza - ERP",
-  description: "Sistema de gestión de inventario y punto de venta",
-};
+export async function generateMetadata(): Promise<Metadata> {
+    const company = await getCurrentCompanySafe();
+    const name = company?.trade_name || company?.legal_name || "ERP";
+    return {
+        title: `${name} - Sistema`,
+        description: `Sistema de gestión de inventario y punto de venta - ${name}`,
+    };
+}
 
 export default function RootLayout({
-  children,
+    children,
 }: Readonly<{
-  children: React.ReactNode;
+    children: React.ReactNode;
 }>) {
-  return (
-    <html lang="es">
-      <body>{children}</body>
-    </html>
-  );
+    return (
+        <html lang="es">
+            <body>{children}</body>
+        </html>
+    );
 }

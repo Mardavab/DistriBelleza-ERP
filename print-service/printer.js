@@ -29,7 +29,17 @@ function getSystemPrinters() {
   return [];
 }
 
-function buildReceipt(saleData) {
+function buildReceipt(saleData, branding) {
+  // branding es opcional. Si viene, sobreescribe el header/footer.
+  // Formato esperado:
+  //   { header: 'DISTRIBELLEZA\nProductos de Belleza',
+  //     footer: 'Gracias por su compra' }
+  const headerLines = branding?.header
+    ? branding.header.split('\n')
+    : ['DISTRIBELLEZA', 'Productos de Belleza'];
+  const footerLines = branding?.footer
+    ? [branding.footer]
+    : [];
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
     characterSet: CharacterSet.PC852_LATIN2,
@@ -63,9 +73,10 @@ function buildReceipt(saleData) {
 
   printer.alignCenter();
   printer.bold(true);
-  printer.println('DISTRIBELLEZA');
+  for (const line of headerLines) {
+    printer.println(line);
+  }
   printer.bold(false);
-  printer.println('Productos de Belleza');
   printer.println('================================');
   printer.newLine();
 
@@ -131,7 +142,7 @@ function buildReceipt(saleData) {
   }
 
   printer.alignCenter();
-  printer.println('!Gracias por su compra!');
+  printer.println(footerLines[0] || '!Gracias por su compra!');
 
   if (saleData.openDrawer) {
     printer.openCashDrawer();
@@ -157,7 +168,7 @@ function sendRawToPrinter(printerName, buffer) {
   }
 }
 
-async function printReceipt(saleData, printerName) {
+async function printReceipt(saleData, printerName, branding) {
   const printers = getSystemPrinters();
   if (printers.length === 0) {
     throw new Error('No hay impresoras configuradas en el sistema. Agregue la impresora en Preferencias del Sistema.');
@@ -168,7 +179,7 @@ async function printReceipt(saleData, printerName) {
     throw new Error(`Impresora "${name}" no encontrada. Disponibles: ${printers.join(', ')}`);
   }
 
-  const buffer = buildReceipt(saleData);
+  const buffer = buildReceipt(saleData, branding);
   sendRawToPrinter(name, buffer);
 
   return { success: true, message: 'Recibo impreso exitosamente.' };

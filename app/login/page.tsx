@@ -1,75 +1,139 @@
-'use client'
+import { createClient } from '../../lib/supabase/server'
+import { getCurrentCompanySafe } from '../../lib/company'
+import { redirect } from 'next/navigation'
 
-import React, { useState } from 'react';
-import { login } from '../actions/auth';
-import './login.css';
+export default async function LoginPage() {
+    const company = await getCurrentCompanySafe()
+    const tradeName = company?.trade_name || company?.legal_name || 'ERP'
 
-export default function LoginPage() {
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError(null);
-
-    const formData = new FormData(e.currentTarget);
-    const result = await login(formData);
-
-    if (result?.error) {
-      setError(result.error);
-      setIsLoading(false);
+    // Si ya está autenticado con tenant, redirigir a /
+    const supabase = createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user && user.app_metadata?.company_id) {
+        redirect('/')
     }
-  };
 
-  return (
-    <div className="login-container">
-      <div className="login-card">
-        <header className="login-header">
-          <h1>Distri Belleza</h1>
-          <p>Gestión Empresarial de Inventario</p>
-        </header>
+    async function login(formData: FormData) {
+        'use server'
+        const { login } = await import('../../app/actions/auth')
+        await login(formData)
+    }
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="email">Correo Electrónico</label>
-            <input
-              className="form-input"
-              type="email"
-              id="email"
-              name="email"
-              required
-              placeholder="admin@glow.com"
-            />
-          </div>
+    return (
+        <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: '100vh',
+            background: '#f1f5f9',
+            fontFamily: 'system-ui, sans-serif',
+        }}>
+            <div style={{
+                background: 'white',
+                padding: '40px',
+                borderRadius: '16px',
+                width: '100%',
+                maxWidth: '420px',
+                boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)',
+            }}>
+                <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                    <h1 style={{
+                        margin: 0,
+                        fontSize: '1.75rem',
+                        color: '#0f172a',
+                        fontWeight: 700,
+                    }}>
+                        {tradeName}
+                    </h1>
+                    <p style={{
+                        margin: '8px 0 0',
+                        color: '#64748b',
+                        fontSize: '0.875rem',
+                    }}>
+                        Iniciar sesión
+                    </p>
+                </div>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="password">Contraseña</label>
-            <input
-              className="form-input"
-              type="password"
-              id="password"
-              name="password"
-              required
-              placeholder="••••••••"
-            />
-          </div>
+                <form action={login}>
+                    <div style={{ marginBottom: '16px' }}>
+                        <label style={{
+                            display: 'block',
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            color: '#334155',
+                            marginBottom: '6px',
+                        }}>
+                            Correo electrónico
+                        </label>
+                        <input
+                            type="email"
+                            name="email"
+                            required
+                            autoComplete="email"
+                            placeholder="usuario@correo.com"
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                fontSize: '0.875rem',
+                            }}
+                        />
+                    </div>
 
-          {error && (
-            <div style={{ color: '#ef4444', fontSize: '0.875rem', marginBottom: '20px', textAlign: 'center' }}>
-              {error}
+                    <div style={{ marginBottom: '24px' }}>
+                        <label style={{
+                            display: 'block',
+                            fontSize: '0.875rem',
+                            fontWeight: 500,
+                            color: '#334155',
+                            marginBottom: '6px',
+                        }}>
+                            Contraseña
+                        </label>
+                        <input
+                            type="password"
+                            name="password"
+                            required
+                            autoComplete="current-password"
+                            placeholder="••••••••"
+                            style={{
+                                width: '100%',
+                                padding: '12px',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
+                                fontSize: '0.875rem',
+                            }}
+                        />
+                    </div>
+
+                    <button
+                        type="submit"
+                        style={{
+                            width: '100%',
+                            padding: '12px',
+                            background: '#6366f1',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '8px',
+                            fontSize: '0.875rem',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                        }}
+                    >
+                        Entrar
+                    </button>
+                </form>
+
+                <p style={{
+                    marginTop: '24px',
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    fontSize: '0.75rem',
+                }}>
+                    © 2026 {tradeName}. Todos los derechos reservados.
+                </p>
             </div>
-          )}
-
-          <button className="btn-login" type="submit" disabled={isLoading}>
-            {isLoading ? 'Iniciando sesión...' : 'Ingresar al sistema'}
-          </button>
-        </form>
-
-        <footer className="login-footer">
-          &copy; 2026 Distri Belleza ERP. Todos los derechos reservados.
-        </footer>
-      </div>
-    </div>
-  );
+        </div>
+    )
 }

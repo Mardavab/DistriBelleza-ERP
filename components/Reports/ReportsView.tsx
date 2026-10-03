@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Calendar, FileText, Download, AlertCircle, TrendingUp, DollarSign, ArrowDownCircle, ArrowUpCircle, Award, CreditCard, RefreshCcw, ShieldCheck, PieChart } from 'lucide-react';
 import { getFinancialReport, FinancialReport } from '../../app/actions/reports';
+import { getPdfBrandingAction } from '../../app/actions/company';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -45,6 +46,11 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
     return colTime.toISOString().split('T')[0];
   });
   const [loading, setLoading] = useState(true);
+  const [branding, setBranding] = useState<{ header: string; footer: string; trade_name: string }>({
+    header: 'ERP',
+    footer: 'ERP - Reporte generado automáticamente.',
+    trade_name: 'ERP',
+  });
 
   async function loadReport() {
     setLoading(true);
@@ -55,6 +61,7 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
 
   useEffect(() => {
     loadReport();
+    getPdfBrandingAction().then(setBranding).catch(() => {});
   }, [date]);
 
   const exportPDF = () => {
@@ -70,7 +77,7 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(24);
     doc.setTextColor(99, 102, 241); // Indigo-500
-    doc.text('DISTRIBELLEZA', 14, 25);
+    doc.text(branding.header, 14, 25);
 
     doc.setFontSize(10);
     doc.setTextColor(148, 163, 184);
@@ -161,7 +168,7 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
     // Footer
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
-    doc.text('Distri Belleza ERP - Reporte generado automáticamente.', pageWidth / 2, 285, { align: 'center' });
+    doc.text(branding.footer, pageWidth / 2, 285, { align: 'center' });
 
     doc.save(`Reporte_Distri_Belleza_${report.date}.pdf`);
   };
@@ -170,17 +177,17 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
 
   return (
     <div className="reports-view animate-fade-in">
-      <div className="reports-header">
-        <div className="header-info">
-          <div className="icon-badge">
-            <FileText size={24} color="#6366f1" />
+      <header className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <div className="page-title-icon">
+            <FileText size={28} color="var(--color-primary)" />
           </div>
-          <div>
-            <h2>Panel de Reportes</h2>
+          <div className="page-title-block">
+            <h1>Panel de Reportes</h1>
             <p>Resumen consolidado y auditoría de operaciones</p>
           </div>
         </div>
-        <div className="header-actions">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
           {userProfile?.role === 'owner' && (
             <div className="date-picker-wrapper">
               <Calendar size={18} className="calendar-icon" />
@@ -192,11 +199,11 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
               />
             </div>
           )}
-          <button className="btn-export" onClick={exportPDF} disabled={!report?.success}>
+          <button className="btn-primary-page" onClick={exportPDF} disabled={!report?.success}>
             <Download size={18} /> Descargar Reporte
           </button>
         </div>
-      </div>
+      </header>
 
       {!report?.success ? (
         <div className="error-card">
@@ -299,21 +306,10 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
 
       <style jsx>{`
         .reports-view { padding: 0; }
-        .reports-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 32px; }
-        .header-info { display: flex; align-items: center; gap: 16px; }
-        .icon-badge { background: #f5f3ff; padding: 12px; border-radius: 16px; }
-        .header-info h2 { font-size: 1.5rem; font-weight: 700; color: #1e293b; margin: 0; }
-        .header-info p { font-size: 0.9rem; color: #64748b; margin: 2px 0 0; }
-
-        .header-actions { display: flex; gap: 16px; align-items: center; }
         .date-picker-wrapper { position: relative; display: flex; align-items: center; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0 16px; height: 44px; transition: all 0.2s; }
         .date-picker-wrapper:hover { border-color: #6366f1; }
         .calendar-icon { color: #94a3b8; margin-right: 10px; }
         .date-input { border: none; outline: none; font-size: 0.9rem; color: #1e293b; font-weight: 600; cursor: pointer; background: transparent; }
-        
-        .btn-export { background: #6366f1; color: white; border: none; padding: 0 20px; border-radius: 12px; height: 44px; display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2); }
-        .btn-export:hover:not(:disabled) { background: #4f46e5; transform: translateY(-2px); box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3); }
-        .btn-export:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .report-grid { display: flex; flex-direction: column; gap: 24px; max-width: 1000px; margin: 0 auto; }
         

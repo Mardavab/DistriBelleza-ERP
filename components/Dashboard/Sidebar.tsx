@@ -10,7 +10,8 @@ import {
   LogOut,
   User,
   Truck,
-  Building2
+  Building2,
+  Globe
 } from 'lucide-react';
 import { signOut } from '../../app/actions/auth';
 import './Dashboard.css';
@@ -19,10 +20,12 @@ interface SidebarProps {
   userProfile: any;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  companyName?: string;
 }
 
-export default function Sidebar({ userProfile, activeTab, setActiveTab }: SidebarProps) {
+export default function Sidebar({ userProfile, activeTab, setActiveTab, companyName }: SidebarProps) {
   const role = userProfile?.role || 'manager';
+  const displayName = companyName || userProfile?.companies?.trade_name || userProfile?.companies?.legal_name || 'ERP';
 
   const menuItems = [
     { id: 'dashboard', name: 'Panel de Control', icon: <LayoutDashboard size={20} />, roles: ['owner', 'technician', 'manager'] },
@@ -31,14 +34,15 @@ export default function Sidebar({ userProfile, activeTab, setActiveTab }: Sideba
     { id: 'suppliers', name: 'Proveedores', icon: <Truck size={20} />, roles: ['owner', 'technician', 'manager'] },
     { id: 'major-expenses', name: 'Gastos Mayores', icon: <Building2 size={20} />, roles: ['owner'] },
     { id: 'reports', name: 'Reportes', icon: <BarChart3 size={20} />, roles: ['owner', 'technician', 'manager'] },
-    { id: 'config', name: 'Configuración', icon: <Settings size={20} />, roles: ['technician'] },
+    { id: 'config', name: 'Configuración', icon: <Settings size={20} />, roles: ['owner'] },
+    { id: 'companies', name: 'Empresas', icon: <Globe size={20} />, roles: ['technician'] },
   ];
 
   return (
     <aside className="sidebar">
       <div className="sidebar-header" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <img src="/logo.svg" alt="Distri Belleza Icon" style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
-        <h2 style={{ margin: 0 }}>Distri Belleza</h2>
+        <img src="/logo.svg" alt={`${displayName} Icon`} style={{ width: '32px', height: '32px', objectFit: 'contain' }} />
+        <h2 style={{ margin: 0 }}>{displayName}</h2>
       </div>
 
       <nav className="nav-links">

@@ -1,0 +1,153 @@
+/* ─── GASTOS MAYORES ──────────────────────────────────────────────────────── */
+
+/* ── Grid de KPIs ── */
+.me-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-6);
+}
+
+.me-stat-card {
+  padding: var(--space-4);
+  transition: all var(--transition-base);
+}
+
+.me-stat-card:hover {
+  border-color: var(--color-border-mid);
+  box-shadow: var(--shadow-sm);
+}
+
+.me-stat-label {
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  color: var(--color-text-mute);
+  margin-bottom: var(--space-1);
+}
+
+.me-stat-value {
+  font-size: var(--font-lg);
+  font-weight: var(--font-weight-black);
+}
+
+.me-stat-total {
+  background: var(--color-bg-soft);
+  border-width: 2px;
+}
+
+.me-stat-total .me-stat-value {
+  color: var(--color-text-soft);
+}
+
+/* ── Filtros ── */
+.me-filter-bar {
+  display: flex;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.me-filter-btn {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-base);
+  border: 1px solid var(--color-border);
+  background: var(--bg-card);
+  color: var(--color-text-mid);
+  font-size: var(--font-sm);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.me-filter-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.me-filter-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-primary-fg);
+}
+
+/* ── Lista de gastos ── */
+.me-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.me-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  transition: all var(--transition-base);
+}
+
+.me-row:hover {
+  border-color: var(--color-primary-bg-dark);
+  box-shadow: var(--shadow-sm);
+}
+
+.me-row-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.me-row-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.me-row-desc {
+  margin: 0;
+  font-size: var(--font-base);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text);
+}
+
+.me-row-meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--font-sm);
+  color: var(--color-text-mute);
+}
+
+.me-row-right {
+  text-align: right;
+}
+
+.me-row-amount {
+  font-size: var(--font-md);
+  font-weight: var(--font-weight-black);
+  color: var(--color-danger-dark);
+  white-space: nowrap;
+}
+
+.me-row-date {
+  font-size: var(--font-sm);
+  color: var(--color-text-light);
+  white-space: nowrap;
+}
+
+.me-row-delete {
+  padding: var(--space-2);
+  color: var(--color-text-light);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.me-row-delete:hover {
+  color: var(--color-danger);
+  background: var(--color-danger-light);
+}

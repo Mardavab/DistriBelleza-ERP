@@ -15,6 +15,7 @@ import {
   createCategory
 } from '../../app/actions/inventory_actions';
 import CustomSelect from '../UI/CustomSelect';
+import { parseCurrencyInput, formatCurrencyInput, formatCurrency } from '../../lib/format';
 
 // SKELETON COMPONENT
 const SkeletonRow = () => (
@@ -137,12 +138,12 @@ export default function InventoryView() {
 
     const productData = { 
       ...productForm, 
-      price_base: productForm.price_base ? parseInt(String(productForm.price_base).replace(/\D/g, '')) : null 
+      price_base: productForm.price_base ? parseCurrencyInput(productForm.price_base) : null 
     };
     const variantsData = variants.map(v => ({ 
       ...v, 
       stock: v.stock === '' ? 0 : parseInt(String(v.stock)),
-      price: v.price === '' ? null : parseInt(String(v.price).replace(/\D/g, '')) 
+      price: v.price === '' ? null : parseCurrencyInput(v.price) 
     }));
 
     let res;
@@ -195,20 +196,25 @@ export default function InventoryView() {
   };
 
   return (
-    <div className="inventory-container">
-      {/* HEADER & FILTERS */}
-      <div className="inventory-header">
-        <div className="header-left">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h2>Gestión de Inventario</h2>
-            {(loading || refreshing) && <RefreshCcw size={16} className="spin-icon text-indigo" />}
+    <div className="page-container">
+      {/* HEADER unificado */}
+      <header className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <div className="page-title-icon">
+            <Package size={28} color="var(--color-primary)" />
           </div>
-          <p>Control total de productos y variantes</p>
+          <div className="page-title-block">
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              Gestión de Inventario
+              {(loading || refreshing) && <RefreshCcw size={18} className="spin-icon text-indigo" />}
+            </h1>
+            <p>Control total de productos y variantes</p>
+          </div>
         </div>
-        <button className="btn-add-product" onClick={openCreateModal} disabled={loading}>
+        <button className="btn-primary-page" onClick={openCreateModal} disabled={loading}>
           <Plus size={20} /> Nuevo Producto
         </button>
-      </div>
+      </header>
 
       <div className="inventory-controls">
         <div className={`search-bar ${loading ? 'skeleton-effect' : ''}`}>
@@ -398,8 +404,8 @@ export default function InventoryView() {
                     <div className="input-with-symbol">
                       <span className="symbol">$</span>
                       <input type="text" className="input-with-padding" value={productForm.price_base} onChange={e => {
-                        const raw = e.target.value.replace(/\D/g, '');
-                        setProductForm({...productForm, price_base: raw ? parseInt(raw).toLocaleString('es-CO') : ''});
+                        const raw = parseCurrencyInput(e.target.value);
+                        setProductForm({...productForm, price_base: raw ? formatCurrencyInput(raw) : ''});
                       }} placeholder="0" />
                     </div>
                   </div>
@@ -435,8 +441,8 @@ export default function InventoryView() {
                       <div className="input-with-symbol small">
                         <span className="symbol">$</span>
                         <input type="text" className="input-with-padding" placeholder="Heredar" value={v.price} onChange={e => {
-                          const raw = e.target.value.replace(/\D/g, '');
-                          const nv = [...variants]; nv[i].price = raw ? parseInt(raw).toLocaleString('es-CO') : ''; setVariants(nv);
+const raw = parseCurrencyInput(e.target.value);
+                          const nv = [...variants]; nv[i].price = raw ? formatCurrencyInput(raw) : ''; setVariants(nv);
                         }} />
                       </div>
                       <button type="button" className="btn-delete-row" disabled={variants.length === 1} onClick={() => removeVariantField(i)}><Trash2 size={16} /></button>

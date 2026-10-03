@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
+import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -39,12 +40,13 @@ export type SupplierInvoice = {
 
 async function uploadInvoiceFile(file: File | null, prefix: string): Promise<string | null> {
   if (!file || file.size === 0 || file.name === 'undefined') return null;
-  
+
   try {
     const fileExt = file.name.split('.').pop() || 'png';
-    const fileName = `${prefix}-${Date.now()}.${fileExt}`;
-    
-    // Convertir a array buffer para Supabase Storage en entorno de Node/Next.js
+    // Prefijo con company_id para aislamiento multi-tenant en storage
+    const companyId = await getCurrentCompanyId();
+    const fileName = `${companyId}/${prefix}-${Date.now()}.${fileExt}`;
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -70,29 +72,32 @@ async function uploadInvoiceFile(file: File | null, prefix: string): Promise<str
 
 // ─── PROVEEDORES ──────────────────────────────────────────────────────────────
 
-/**
- * Obtiene todos los proveedores activos.
- */
 export async function getSuppliers(): Promise<{ success: boolean; data?: Supplier[]; error?: string }> {
   noStore();
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { data, error } = await supabaseAdmin
       .from('suppliers')
       .select('*')
       .eq('active', true)
+      .eq('company_id', companyId)
       .order('name', { ascending: true });
 
     if (error) throw error;
     return { success: true, data: data || [] };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error fetching suppliers:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Crea un nuevo proveedor.
- */
 export async function createSupplier(payload: {
   name: string;
   phone?: string;
@@ -104,9 +109,12 @@ export async function createSupplier(payload: {
       return { success: false, error: 'El nombre del proveedor es obligatorio.' };
     }
 
+    const companyId = await getCurrentCompanyId();
+
     const { data, error } = await supabaseAdmin
       .from('suppliers')
       .insert({
+        company_id: companyId,
         name: payload.name.trim(),
         phone: payload.phone?.trim() || null,
         email: payload.email?.trim() || null,
@@ -120,19 +128,24 @@ export async function createSupplier(payload: {
     revalidatePath('/');
     return { success: true, data };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error creating supplier:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Actualiza un proveedor existente.
- */
 export async function updateSupplier(
   id: string,
   payload: { name: string; phone?: string; email?: string; address?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { error } = await supabaseAdmin
       .from('suppliers')
       .update({
@@ -142,31 +155,44 @@ export async function updateSupplier(
         address: payload.address?.trim() || null,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error updating supplier:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Desactiva (soft-delete) un proveedor.
- */
 export async function deleteSupplier(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { error } = await supabaseAdmin
       .from('suppliers')
       .update({ active: false, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error deleting supplier:', error);
     return { success: false, error: error.message };
   }
@@ -174,9 +200,6 @@ export async function deleteSupplier(id: string): Promise<{ success: boolean; er
 
 // ─── FACTURAS DE PROVEEDORES ──────────────────────────────────────────────────
 
-/**
- * Obtiene todas las facturas de proveedores con nombre del proveedor.
- */
 export async function getSupplierInvoices(): Promise<{
   success: boolean;
   data?: SupplierInvoice[];
@@ -184,12 +207,15 @@ export async function getSupplierInvoices(): Promise<{
 }> {
   noStore();
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { data, error } = await supabaseAdmin
       .from('supplier_invoices')
       .select(`
         *,
         suppliers ( name )
       `)
+      .eq('company_id', companyId)
       .order('due_date', { ascending: true });
 
     if (error) throw error;
@@ -201,14 +227,17 @@ export async function getSupplierInvoices(): Promise<{
 
     return { success: true, data: normalized };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error fetching supplier invoices:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Crea una nueva factura de proveedor.
- */
 export async function createSupplierInvoice(formData: FormData): Promise<{ success: boolean; data?: SupplierInvoice; error?: string }> {
   try {
     const supplier_id = formData.get('supplier_id') as string;
@@ -226,6 +255,8 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
     if (!due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
     if (!amount || amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
 
+    const companyId = await getCurrentCompanyId();
+
     let invoice_file_url = null;
     if (invoice_file && invoice_file.size > 0) {
       invoice_file_url = await uploadInvoiceFile(invoice_file, 'inv');
@@ -234,6 +265,7 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
     const { data, error } = await supabaseAdmin
       .from('supplier_invoices')
       .insert({
+        company_id: companyId,
         supplier_id,
         invoice_number: invoice_number?.trim() || null,
         issue_date,
@@ -252,14 +284,17 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
     revalidatePath('/');
     return { success: true, data };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error creating invoice:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Actualiza una factura existente.
- */
 export async function updateSupplierInvoice(
   id: string,
   formData: FormData
@@ -279,6 +314,8 @@ export async function updateSupplierInvoice(
     if (!issue_date) return { success: false, error: 'La fecha de expedición es obligatoria.' };
     if (!due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
     if (!amount || amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
+
+    const companyId = await getCurrentCompanyId();
 
     const updateData: any = {
       supplier_id,
@@ -300,66 +337,84 @@ export async function updateSupplierInvoice(
     const { error } = await supabaseAdmin
       .from('supplier_invoices')
       .update(updateData)
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error updating invoice:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Actualiza el estado de una factura (pending, paid, overdue, cancelled).
- */
 export async function updateInvoiceStatus(
   id: string,
   status: 'pending' | 'paid' | 'overdue' | 'cancelled'
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { error } = await supabaseAdmin
       .from('supplier_invoices')
       .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Elimina una factura de proveedor.
- */
 export async function deleteSupplierInvoice(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const companyId = await getCurrentCompanyId();
+
     const { error } = await supabaseAdmin
       .from('supplier_invoices')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
+    console.error('Error deleting invoice:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Marca una factura como pagada completamente, permitiendo adjuntar comprobante.
- */
 export async function markInvoiceAsPaid(
   id: string,
   formData?: FormData
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const companyId = await getCurrentCompanyId();
     let receipt_file_url = null;
-    
+
     if (formData) {
       const receipt_file = formData.get('receipt_file') as File | null;
       if (receipt_file && receipt_file.size > 0) {
@@ -367,21 +422,21 @@ export async function markInvoiceAsPaid(
       }
     }
 
-    // Obtener el total de la factura para actualizar paid_amount si es necesario
     const { data: inv, error: fetchErr } = await supabaseAdmin
       .from('supplier_invoices')
       .select('amount')
       .eq('id', id)
+      .eq('company_id', companyId)
       .single();
-      
+
     if (fetchErr || !inv) throw fetchErr ?? new Error('Factura no encontrada.');
 
-    const updateData: any = { 
-      status: 'paid', 
+    const updateData: any = {
+      status: 'paid',
       paid_amount: inv.amount,
-      updated_at: new Date().toISOString() 
+      updated_at: new Date().toISOString()
     };
-    
+
     if (receipt_file_url) {
       updateData.receipt_file_url = receipt_file_url;
     }
@@ -389,21 +444,24 @@ export async function markInvoiceAsPaid(
     const { error } = await supabaseAdmin
       .from('supplier_invoices')
       .update(updateData)
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (error) throw error;
     revalidatePath('/');
     return { success: true };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error marking as paid:', error);
     return { success: false, error: error.message };
   }
 }
 
-/**
- * Registra un abono parcial o total a una factura de proveedor.
- * Si el abono cubre el total pendiente, la factura se marca como pagada automáticamente.
- */
 export async function addInvoicePayment(
   id: string,
   paymentAmount: number
@@ -413,20 +471,22 @@ export async function addInvoicePayment(
       return { success: false, error: 'El valor del abono debe ser mayor a cero.' };
     }
 
-    // 1. Obtener factura actual
+    const companyId = await getCurrentCompanyId();
+
     const { data: inv, error: fetchErr } = await supabaseAdmin
       .from('supplier_invoices')
       .select('amount, paid_amount, status')
       .eq('id', id)
+      .eq('company_id', companyId)
       .single();
 
     if (fetchErr || !inv) throw fetchErr ?? new Error('Factura no encontrada.');
-    if (inv.status === 'paid')      return { success: false, error: 'Esta factura ya está completamente pagada.' };
+    if (inv.status === 'paid') return { success: false, error: 'Esta factura ya está completamente pagada.' };
     if (inv.status === 'cancelled') return { success: false, error: 'No se puede abonar a una factura cancelada.' };
 
     const currentPaid = Number(inv.paid_amount ?? 0);
-    const total       = Number(inv.amount);
-    const remaining   = total - currentPaid;
+    const total = Number(inv.amount);
+    const remaining = total - currentPaid;
 
     if (paymentAmount > remaining) {
       return {
@@ -438,7 +498,6 @@ export async function addInvoicePayment(
     const newPaidAmount = currentPaid + paymentAmount;
     const newStatus: 'paid' | 'pending' = newPaidAmount >= total ? 'paid' : 'pending';
 
-    // 2. Actualizar factura
     const { error: updateErr } = await supabaseAdmin
       .from('supplier_invoices')
       .update({
@@ -446,13 +505,20 @@ export async function addInvoicePayment(
         status: newStatus,
         updated_at: new Date().toISOString(),
       })
-      .eq('id', id);
+      .eq('id', id)
+      .eq('company_id', companyId);
 
     if (updateErr) throw updateErr;
 
     revalidatePath('/');
     return { success: true, newPaidAmount, newStatus };
   } catch (error: any) {
+    if (error.message === 'UNAUTHENTICATED') {
+      return { success: false, error: 'No autenticado.' };
+    }
+    if (error.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error('Error adding invoice payment:', error);
     return { success: false, error: error.message };
   }

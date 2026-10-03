@@ -21,6 +21,8 @@ export interface ReceiptData {
   transferType?: string;
   cashReceived?: number;
   openDrawer: boolean;
+  companyId?: string;
+  branding?: { header?: string; footer?: string };
 }
 
 interface PrintReceiptProps {
@@ -41,7 +43,10 @@ export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
     try {
       const response = await fetch(`${PRINT_SERVICE_URL}/print`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Print-Service-Token': process.env.NEXT_PUBLIC_PRINT_SERVICE_TOKEN || '',
+        },
         body: JSON.stringify(saleData),
       });
 

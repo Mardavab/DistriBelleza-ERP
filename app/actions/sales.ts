@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '../../lib/supabase/server';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
+import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 
 export interface POSItem {
   variant_id: string;
@@ -15,7 +16,10 @@ export async function searchPOSProducts(query: string) {
   noStore();
   if (!query || query.length < 2) return [];
 
-  const { data, error } = await supabaseAdmin.rpc('search_inventory', {
+  const companyId = await getCurrentCompanyId();
+
+  const { data, error } = await supabaseAdmin.rpc('tenant_search_inventory', {
+    p_company_id: companyId,
     search_term: query
   });
 
@@ -25,9 +29,12 @@ export async function searchPOSProducts(query: string) {
 
 export async function getDefaultProducts(page: number = 1, pageSize: number = 200) {
   noStore();
+  const companyId = await getCurrentCompanyId();
+
   const { data, error, count } = await supabaseAdmin
     .from('product_variants')
     .select('id, sku, stock, price, name, updated_at, products!inner(name, brand, price_base)', { count: 'exact' })
+    .eq('company_id', companyId)
     .gt('stock', 0)
     .order('updated_at', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
@@ -61,14 +68,15 @@ export async function processPOSSale(
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
+    const companyId = await getCurrentCompanyId();
 
-    const { data, error } = await supabaseAdmin.rpc('process_sale', {
+    const { data, error } = await supabaseAdmin.rpc('tenant_process_sale', {
+      p_company_id: companyId,
       p_customer_id: customerId,
       p_items: items,
       p_payment_method: paymentMethod,
       p_transfer_type: transferType,
       p_total_discount: totalDiscount,
-      p_user_id: user?.id || null
     });
 
     if (error) {
@@ -97,12 +105,14 @@ export async function processPOSSale(
       .from('sales')
       .select('total_amount, discount_amount, total_with_discount, paid_amount, created_at')
       .eq('id', result.sale_id)
+      .eq('company_id', companyId)
       .single();
 
     const { data: saleItems } = await supabaseAdmin
       .from('sale_items')
       .select('quantity, unit_price, discount_amount, products(name)')
-      .eq('sale_id', result.sale_id);
+      .eq('sale_id', result.sale_id)
+      .eq('company_id', companyId);
 
     const receiptItems = (saleItems || []).map((si: any) => ({
       productName: si.products?.name || 'Producto',
@@ -131,6 +141,9 @@ export async function processPOSSale(
     };
 
   } catch (err: any) {
+    if (err.message === 'UNAUTHENTICATED' || err.message === 'NO_COMPANY_CONTEXT') {
+      return { success: false, error: 'Usuario sin empresa asignada.' };
+    }
     console.error("Error in processPOSSale:", err);
     return { success: false, error: 'Error inesperado.' };
   } finally {

@@ -2,6 +2,7 @@
 
 import { createClient } from '../../lib/supabase/server';
 import { supabaseAdmin } from '../../lib/supabase';
+import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday, getColombiaDayRange } from '../../lib/timezone';
 
 export interface FinancialReport {
@@ -17,6 +18,7 @@ export interface FinancialReport {
     cashExpenses: number;     // Solo gastos en CASH
     cashToSuppliers: number;  // Solo pagos a prov en CASH
     expectedCash: number;     // Fondo + Ventas(CASH) + Cobros(CASH) - Gastos(CASH) - Prov(CASH)
+    goal: number;             // Meta de ventas para aplicar comision (commission_threshold)
   };
   kpis: {
     totalCompletedSales: number; // Total de ventas (Cualquier método)
@@ -131,27 +133,30 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
       .gte('created_at', startOfDay)
       .lte('created_at', endOfDay);
 
-    const totalCompletedSales = allSales?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
-    
-    const COMMISSION_THRESHOLD = 1800000;
+const totalCompletedSales = allSales?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
+
+    const company = await getCurrentCompany();
+    const COMMISSION_THRESHOLD = company?.settings.commission_threshold ?? 1800000;
+    const COMMISSION_RATE = company?.settings.commission_rate ?? 0.012;
     const isCommissionEligible = totalCompletedSales > COMMISSION_THRESHOLD;
-    const commissionEarned = isCommissionEligible ? (totalCompletedSales * 0.012) : 0;
+    const commissionEarned = isCommissionEligible ? (totalCompletedSales * COMMISSION_RATE) : 0;
 
     const expectedCash = (initialFund + cashFromSales + cashFromCustomers) - (cashExpenses + cashToSuppliers + commissionEarned);
 
     return {
       success: true,
       date: targetDate,
-      summary: { 
-        initialFund, 
-        cashFromSales, 
+      summary: {
+        initialFund,
+        cashFromSales,
         cardSales,
         transferSales,
         creditSales,
-        cashFromCustomers, 
-        cashExpenses, 
-        cashToSuppliers, 
-        expectedCash 
+        cashFromCustomers,
+        cashExpenses,
+        cashToSuppliers,
+        expectedCash,
+        goal: COMMISSION_THRESHOLD
       },
       kpis: { totalCompletedSales, commissionEarned, commissionApplied: isCommissionEligible }
     };
@@ -179,7 +184,17 @@ export async function getDashboardStats() {
         totalSales: report.kpis.totalCompletedSales,
         totalExpenses: report.summary.cashExpenses + report.summary.cashToSuppliers,
         netCash: report.summary.expectedCash,
-        goal: 1800000,
-        progress: (report.kpis.totalCompletedSales / 1800000) * 100
+        goal: report.summary.goal,
+        progress: (report.kpis.totalCompletedSales / report.summary.goal) * 100
     };
+}
+
+/**
+ * Devuelve la meta de comisión del tenant formateada en pesos COP.
+ * Usado por componentes cliente que necesitan mostrar la meta.
+ */
+export async function getCommissionGoalFormatted(): Promise<string> {
+    const company = await getCurrentCompany();
+    const goal = company?.settings.commission_threshold ?? 1800000;
+    return `$${goal.toLocaleString('es-CO')}`;
 }

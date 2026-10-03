@@ -1,13 +1,16 @@
 'use client'
 
 import React, { useState, useEffect } from 'react';
+import { LayoutDashboard } from 'lucide-react';
 import { getUserProfile } from './actions/auth';
+import { getCurrentCompanyAction } from './actions/company';
 import Sidebar from '../components/Dashboard/Sidebar';
 import Dashboard from '../components/Dashboard/Dashboard';
 import POS from '../components/POS/POS';
 import InventoryView from '../components/Inventory/InventoryView';
 import ReportsView from '../components/Reports/ReportsView';
 import UserManagement from '../components/UI/UserManagement';
+import CompaniesPanel from '../components/Platform/CompaniesPanel';
 import SuppliersView from '../components/Suppliers/SuppliersView';
 import MajorExpensesView from '../components/MajorExpenses/MajorExpensesView';
 import '../components/Dashboard/Dashboard.css';
@@ -15,6 +18,7 @@ import '../components/Dashboard/Dashboard.css';
 export default function Home() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [profile, setProfile] = useState<any>(null);
+  const [companyName, setCompanyName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,6 +30,10 @@ export default function Home() {
           return;
         }
         setProfile(p);
+        const company = await getCurrentCompanyAction();
+        if (company) {
+          setCompanyName(company.trade_name || company.legal_name);
+        }
       } catch (err) {
         console.error("Auth error:", err);
         window.location.href = '/login';
@@ -60,8 +68,12 @@ export default function Home() {
       case 'major-expenses':
         return <MajorExpensesView />;
       case 'config':
-        return (profile?.role === 'technician') 
-          ? <UserManagement currentUserRole={profile?.role} /> 
+        return (profile?.role === 'owner')
+          ? <UserManagement currentUserRole={profile?.role} />
+          : <div className="p-8 text-slate-500">No tienes permiso para acceder a esta sección.</div>;
+      case 'companies':
+        return (profile?.role === 'technician')
+          ? <CompaniesPanel />
           : <div className="p-8 text-slate-500">No tienes permiso para acceder a esta sección.</div>;
       default:
         return <Dashboard />;
@@ -74,28 +86,25 @@ export default function Home() {
         userProfile={profile}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
+        companyName={companyName}
       />
       <main className={`main-content${activeTab === 'pos' ? ' pos-active' : ''}`}>
         {activeTab === 'dashboard' ? (
-          <header style={{
-            marginBottom: '32px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <div>
-              <h1 style={{ fontSize: '1.5rem', fontWeight: 600, color: '#0f172a', textTransform: 'capitalize' }}>
-                Dashboard
-              </h1>
-              <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Bienvenido de nuevo, {profile?.full_name}</p>
+          <header className="page-header" style={{ marginBottom: 'var(--space-6)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+              <div className="page-title-icon">
+                <LayoutDashboard size={28} color="var(--color-primary)" />
+              </div>
+              <div className="page-title-block">
+                <h1 style={{ textTransform: 'capitalize' }}>Dashboard</h1>
+                <p>Bienvenido de nuevo, {profile?.full_name}</p>
+              </div>
             </div>
-            <div style={{ background: 'white', padding: '8px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', fontSize: '0.875rem', color: '#64748b', fontWeight: 500 }}>
+            <div className="page-date-chip">
               {new Date().toLocaleDateString('es-CO', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
             </div>
           </header>
-        ) : (
-          activeTab !== 'pos' && <div style={{ paddingTop: '20px' }}></div>
-        )}
+        ) : null}
 
         {renderContent()}
       </main>

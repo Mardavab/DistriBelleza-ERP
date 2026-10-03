@@ -12,17 +12,12 @@ import {
   deleteSupplierInvoice, addInvoicePayment, markInvoiceAsPaid,
   type Supplier, type SupplierInvoice
 } from '../../app/actions/suppliers';
+import { getBilledToOptions } from '../../app/actions/settings';
+import { getPdfBrandingAction } from '../../app/actions/company';
+import { formatCurrency, formatCurrencyInput, parseCurrencyInput, formatDate } from '../../lib/format';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import './Suppliers.css';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const fmt = (n: number) =>
-  new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n);
-
-const fmtDate = (d: string) =>
-  new Date(d + 'T12:00:00').toLocaleDateString('es-CO', { day: '2-digit', month: 'short', year: 'numeric' });
 
 const isOverdue = (due: string, status: string) =>
   status === 'pending' && new Date(due + 'T23:59:59') < new Date();
@@ -173,16 +168,17 @@ type InvoiceModalProps = {
   suppliers: Supplier[];
   onClose: () => void;
   onSaved: () => void;
+  billedToOptions?: string[];
 };
 
-function InvoiceModal({ initial, suppliers, onClose, onSaved }: InvoiceModalProps) {
+function InvoiceModal({ initial, suppliers, onClose, onSaved, billedToOptions = ['Norby', 'Marlon', 'Otros'] }: InvoiceModalProps) {
   const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     supplier_id: initial?.supplier_id ?? '',
     invoice_number: initial?.invoice_number ?? '',
     issue_date: initial?.issue_date ?? today,
     due_date: initial?.due_date ?? '',
-    amount: initial?.amount ? new Intl.NumberFormat('es-CO').format(initial.amount) : '',
+    amount: initial?.amount ? formatCurrencyInput(initial.amount) : '',
     description: initial?.description ?? '',
     billed_to: initial?.billed_to ?? '',
     invoice_type: initial?.invoice_type ?? 'remision',
@@ -258,8 +254,8 @@ function InvoiceModal({ initial, suppliers, onClose, onSaved }: InvoiceModalProp
                 id="inv-amount"
                 value={form.amount}
                 onChange={(e) => {
-                  const val = e.target.value.replace(/\D/g, '');
-                  const formatted = val ? new Intl.NumberFormat('es-CO').format(parseInt(val, 10)) : '';
+                  const val = parseCurrencyInput(e.target.value);
+                  const formatted = formatCurrencyInput(val);
                   setForm(prev => ({ ...prev, amount: formatted }));
                 }}
                 placeholder="Ej: 350.000"
@@ -283,12 +279,12 @@ function InvoiceModal({ initial, suppliers, onClose, onSaved }: InvoiceModalProp
           <div className="form-row">
             <div className="form-group">
               <label htmlFor="inv-billed-to">A nombre de quién</label>
-              <select id="inv-billed-to" value={form.billed_to} onChange={set('billed_to')}>
-                <option value="">— Seleccionar —</option>
-                <option value="Norby">Norby</option>
-                <option value="Marlon">Marlon</option>
-                <option value="Otros">Otros</option>
-              </select>
+<select id="inv-billed-to" value={form.billed_to} onChange={set('billed_to')}>
+                  <option value="">Seleccionar...</option>
+                  {billedToOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
             </div>
             <div className="form-group">
               <label htmlFor="inv-type">Tipo de Factura</label>
@@ -377,14 +373,14 @@ function AbonoModal({ invoice, onClose, onSaved }: AbonoModalProps) {
         {/* Progress */}
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b', marginBottom: 8 }}>
-            <span>Abonado: <strong style={{ color: '#6366f1' }}>{fmt(paid)}</strong></span>
-            <span>Total: <strong style={{ color: '#0f172a' }}>{fmt(total)}</strong></span>
+            <span>Abonado: <strong style={{ color: '#6366f1' }}>{formatCurrency(paid)}</strong></span>
+            <span>Total: <strong style={{ color: '#0f172a' }}>{formatCurrency(total)}</strong></span>
           </div>
           <div className="abono-bar-wrap">
             <div className="abono-bar-fill" style={{ width: `${pct}%` }} />
           </div>
           <p className="abono-info" style={{ textAlign: 'right', marginTop: 6 }}>
-            Saldo pendiente: <strong style={{ color: pending > 0 ? '#b45309' : '#15803d' }}>{fmt(pending)}</strong>
+            Saldo pendiente: <strong style={{ color: pending > 0 ? '#b45309' : '#15803d' }}>{formatCurrency(pending)}</strong>
           </p>
         </div>
 
@@ -398,11 +394,10 @@ function AbonoModal({ invoice, onClose, onSaved }: AbonoModalProps) {
               type="text"
               value={amount}
               onChange={e => {
-                const val = e.target.value.replace(/\D/g, '');
-                const formatted = val ? new Intl.NumberFormat('es-CO').format(parseInt(val, 10)) : '';
-                setAmount(formatted);
+                const val = parseCurrencyInput(e.target.value);
+                setAmount(formatCurrencyInput(val));
               }}
-              placeholder={`Máx. ${fmt(pending)}`}
+              placeholder={`Máx. ${formatCurrency(pending)}`}
               required
               autoFocus
             />
@@ -462,7 +457,7 @@ function PayConfirmModal({ invoice, onClose, onSaved }: PayConfirmModalProps) {
         <form className="sup-form" onSubmit={handleSubmit}>
           <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', marginBottom: '8px', border: '1px solid #e2e8f0' }}>
              <p style={{ margin: '0 0 8px 0', fontSize: '0.875rem', color: '#64748b' }}>Vas a marcar como pagada esta factura:</p>
-             <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '1.2rem' }}>{fmt(Number(invoice.amount))}</h3>
+             <h3 style={{ margin: '0 0 4px 0', color: '#0f172a', fontSize: '1.2rem' }}>{formatCurrency(Number(invoice.amount))}</h3>
              <p style={{ margin: 0, fontSize: '0.875rem', color: '#334155' }}>N°: {invoice.invoice_number || 'Sin número'}</p>
           </div>
 
@@ -502,6 +497,15 @@ function ReportModal({ invoices, onClose }: ReportModalProps) {
   const [reportType, setReportType] = useState<'month' | 'year'>('month');
   const [selectedMonth, setSelectedMonth] = useState(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
   const [selectedYear, setSelectedYear] = useState(today.getFullYear().toString());
+  const [branding, setBranding] = useState<{ header: string; footer: string }>({
+    header: 'ERP',
+    footer: 'ERP - Reporte generado automáticamente.',
+  });
+
+  // Cargar branding del tenant al montar el modal
+  useEffect(() => {
+    getPdfBrandingAction().then((b) => setBranding({ header: b.header, footer: b.footer })).catch(() => {});
+  }, []);
 
   const handleGeneratePDF = () => {
     const doc = new jsPDF();
@@ -514,7 +518,7 @@ function ReportModal({ invoices, onClose }: ReportModalProps) {
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(24);
     doc.setTextColor(99, 102, 241); // Indigo-500
-    doc.text('DISTRIBELLEZA', 14, 25);
+    doc.text(branding.header, 14, 25);
 
     doc.setFontSize(10);
     doc.setTextColor(148, 163, 184);
@@ -560,21 +564,21 @@ function ReportModal({ invoices, onClose }: ReportModalProps) {
     doc.roundedRect(14, 50, cardWidth, 25, 3, 3, 'F');
     doc.setFontSize(8); doc.setTextColor(59, 130, 246); doc.setFont('helvetica', 'bold');
     doc.text('TOTAL NORBY', 18, 58);
-    doc.setFontSize(14); doc.text(`$${totalNorby.toLocaleString('es-CO')}`, 18, 68);
+    doc.setFontSize(14); doc.text(formatCurrency(totalNorby), 18, 68);
 
     // Card 2
     doc.setFillColor(240, 253, 244);
     doc.roundedRect(14 + cardWidth + 6, 50, cardWidth, 25, 3, 3, 'F');
     doc.setFontSize(8); doc.setTextColor(22, 163, 74); 
     doc.text('TOTAL MARLON', 18 + cardWidth + 6, 58);
-    doc.setFontSize(14); doc.text(`$${totalMarlon.toLocaleString('es-CO')}`, 18 + cardWidth + 6, 68);
+    doc.setFontSize(14); doc.text(formatCurrency(totalMarlon), 18 + cardWidth + 6, 68);
 
     // Card 3
     doc.setFillColor(248, 250, 252);
     doc.roundedRect(14 + (cardWidth * 2) + 12, 50, cardWidth, 25, 3, 3, 'F');
     doc.setFontSize(8); doc.setTextColor(100, 116, 139); 
     doc.text('TOTAL OTROS', 18 + (cardWidth * 2) + 12, 58);
-    doc.setFontSize(14); doc.text(`$${totalOtros.toLocaleString('es-CO')}`, 18 + (cardWidth * 2) + 12, 68);
+    doc.setFontSize(14); doc.text(formatCurrency(totalOtros), 18 + (cardWidth * 2) + 12, 68);
 
     let startY = 85;
 
@@ -591,8 +595,8 @@ function ReportModal({ invoices, onClose }: ReportModalProps) {
         body: data.map(i => [
           i.supplier_name ?? '-',
           i.invoice_number || '-',
-          fmtDate(i.issue_date),
-          `$${Number(i.amount).toLocaleString('es-CO')}`,
+          formatDate(i.issue_date),
+          formatCurrency(Number(i.amount)),
           STATUS_LABELS[i.status] ?? i.status
         ]),
         headStyles: { fillColor: [99, 102, 241] },
@@ -625,13 +629,13 @@ function ReportModal({ invoices, onClose }: ReportModalProps) {
     doc.setTextColor(255, 255, 255);
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(18);
-    doc.text(`$${grandTotal.toLocaleString('es-CO')}`, 24, lastY + 20);
+    doc.text(formatCurrency(grandTotal), 24, lastY + 20);
 
     // Footer
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    doc.text('Distri Belleza ERP - Reporte generado automáticamente.', pageWidth / 2, 285, { align: 'center' });
+    doc.text(branding.footer, pageWidth / 2, 285, { align: 'center' });
 
     doc.save(`Reporte_Proveedores_${titleDate}.pdf`);
     onClose();
@@ -824,7 +828,13 @@ function SuppliersTab({ suppliers, loading, onRefresh }: { suppliers: Supplier[]
 
 // ─── Tab: Facturas ────────────────────────────────────────────────────────────
 
-function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: SupplierInvoice[]; suppliers: Supplier[]; loading: boolean; onRefresh: () => void }) {
+function InvoicesTab({ invoices, suppliers, loading, onRefresh, billedToOptions = ['Norby', 'Marlon', 'Otros'] }: {
+  invoices: SupplierInvoice[];
+  suppliers: Supplier[];
+  loading: boolean;
+  onRefresh: () => void;
+  billedToOptions?: string[];
+}) {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [modal, setModal] = useState<null | 'new' | SupplierInvoice>(null);
@@ -940,20 +950,20 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
                       </span>
                     </div>
                   </td>
-                  <td style={{ whiteSpace: 'nowrap' }}>{fmtDate(inv.issue_date)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>{formatDate(inv.issue_date)}</td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <span style={{ color: isOverdue(inv.due_date, inv.status) ? '#dc2626' : 'inherit', fontWeight: isOverdue(inv.due_date, inv.status) ? 600 : 400 }}>
-                      {fmtDate(inv.due_date)}
+                      {formatDate(inv.due_date)}
                     </span>
                   </td>
                   <td>
-                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{fmt(inv.amount)}</div>
+                    <div style={{ fontWeight: 700, color: '#0f172a' }}>{formatCurrency(inv.amount)}</div>
                     {Number(inv.paid_amount ?? 0) > 0 && inv.status !== 'paid' && (
                       <>
                         <div className="abono-bar-wrap">
                           <div className="abono-bar-fill" style={{ width: `${Math.min(100,(Number(inv.paid_amount)/Number(inv.amount))*100)}%` }} />
                         </div>
-                        <div className="abono-info">Abonado: {fmt(Number(inv.paid_amount ?? 0))}</div>
+                        <div className="abono-info">Abonado: {formatCurrency(Number(inv.paid_amount ?? 0))}</div>
                       </>
                     )}
                   </td>
@@ -1000,6 +1010,7 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
           suppliers={suppliers}
           onClose={() => setModal(null)}
           onSaved={() => { setModal(null); onRefresh(); }}
+          billedToOptions={billedToOptions}
         />
       )}
       {abonoInvoice && (
@@ -1019,7 +1030,7 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
       {confirmInvoice && (
         <ConfirmModal
           title="¿Eliminar factura?"
-          message={`Se eliminará la factura de "${confirmInvoice.supplier_name}" por ${fmt(confirmInvoice.amount)}. Esta acción no se puede deshacer.`}
+          message={`Se eliminará la factura de "${confirmInvoice.supplier_name}" por ${formatCurrency(confirmInvoice.amount)}. Esta acción no se puede deshacer.`}
           confirmLabel="Sí, eliminar"
           variant="danger"
           loading={deletingInv}
@@ -1034,12 +1045,13 @@ function InvoicesTab({ invoices, suppliers, loading, onRefresh }: { invoices: Su
 // ─── Root Component ───────────────────────────────────────────────────────────
 
 export default function SuppliersView() {
-  const [tab, setTab] = useState<'suppliers' | 'invoices'>('suppliers');
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [invoices, setInvoices]   = useState<SupplierInvoice[]>([]);
-  const [loadingS, setLoadingS]   = useState(true);
-  const [loadingI, setLoadingI]   = useState(true);
-  const [showReportModal, setShowReportModal] = useState(false);
+const [tab, setTab] = useState<'suppliers' | 'invoices'>('suppliers');
+const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+const [invoices, setInvoices]   = useState<SupplierInvoice[]>([]);
+const [loadingS, setLoadingS]   = useState(true);
+const [loadingI, setLoadingI]   = useState(true);
+const [showReportModal, setShowReportModal] = useState(false);
+const [billedToOptions, setBilledToOptions] = useState<string[]>(['Norby', 'Marlon', 'Otros']);
 
   const loadSuppliers = async () => {
     setLoadingS(true);
@@ -1057,6 +1069,10 @@ export default function SuppliersView() {
 
   useEffect(() => { loadSuppliers(); loadInvoices(); }, []);
 
+  useEffect(() => {
+    getBilledToOptions().then(setBilledToOptions).catch(() => {});
+  }, []);
+
   // ── KPIs ──
   const pendingInvoices  = invoices.filter(i => i.status === 'pending' && !isOverdue(i.due_date, i.status));
   const overdueInvoices  = invoices.filter(i => isOverdue(i.due_date, i.status));
@@ -1065,20 +1081,25 @@ export default function SuppliersView() {
 
   return (
     <div className="suppliers-root">
-      {/* Header */}
-      <div className="suppliers-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div className="suppliers-title-block">
-          <h1>Proveedores</h1>
-          <p>Gestiona tus proveedores y el seguimiento de facturas</p>
+      {/* Header unificado */}
+      <header className="page-header">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+          <div className="page-title-icon">
+            <Truck size={28} color="var(--color-primary)" />
+          </div>
+          <div className="page-title-block">
+            <h1>Proveedores</h1>
+            <p>Gestiona tus proveedores y el seguimiento de facturas</p>
+          </div>
         </div>
         <button 
           className="btn-secondary" 
           onClick={() => setShowReportModal(true)} 
-          style={{ color: '#0f172a', background: '#fff', border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', height: 40 }}
+          style={{ color: 'var(--color-text)', background: 'var(--bg-card)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-xs)', height: 44 }}
         >
-          <FileText size={16} color="#6366f1" /> Generar Reporte
+          <FileText size={16} color="var(--color-primary)" /> Generar Reporte
         </button>
-      </div>
+      </header>
 
       {/* KPIs */}
       <div className="suppliers-kpi-row">
@@ -1093,7 +1114,7 @@ export default function SuppliersView() {
           <div className="sup-kpi-icon amber"><Clock size={22} /></div>
           <div>
             <p className="sup-kpi-label">Por pagar</p>
-            <p className="sup-kpi-value">{fmt(totalPending)}</p>
+            <p className="sup-kpi-value">{formatCurrency(totalPending)}</p>
           </div>
         </div>
         <div className="sup-kpi-card">
@@ -1101,7 +1122,7 @@ export default function SuppliersView() {
           <div>
             <p className="sup-kpi-label">Facturas vencidas</p>
             <p className="sup-kpi-value" style={{ color: overdueInvoices.length > 0 ? '#dc2626' : undefined }}>
-              {fmt(totalOverdue)}
+              {formatCurrency(totalOverdue)}
             </p>
           </div>
         </div>
@@ -1141,7 +1162,7 @@ export default function SuppliersView() {
       {tab === 'suppliers' ? (
         <SuppliersTab suppliers={suppliers} loading={loadingS} onRefresh={loadSuppliers} />
       ) : (
-        <InvoicesTab invoices={invoices} suppliers={suppliers} loading={loadingI} onRefresh={loadInvoices} />
+        <InvoicesTab invoices={invoices} suppliers={suppliers} loading={loadingI} onRefresh={loadInvoices} billedToOptions={billedToOptions} />
       )}
 
       {showReportModal && (
