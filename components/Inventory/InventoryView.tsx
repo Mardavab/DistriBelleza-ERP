@@ -199,9 +199,9 @@ export default function InventoryView() {
     <div className="page-container">
       {/* HEADER unificado */}
       <header className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <div className="page-header-group">
           <div className="page-title-icon">
-            <Package size={28} color="var(--color-primary)" />
+            <Package size={28} />
           </div>
           <div className="page-title-block">
             <h1 style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>

@@ -14,7 +14,9 @@
   --color-primary-light: #818cf8;     /* tints */
   --color-primary-bg: #f5f3ff;        /* fondos suaves */
   --color-primary-bg-dark: #ede9fe;
-  --color-primary-fg: #ffffff;        /* texto sobre primary */
+  --color-primary-fg: #ffffff;
+  /* Anillo de foco (rgba del color primario al 10%) */
+  --color-primary-ring: rgba(99, 102, 241, 0.1);        /* texto sobre primary */
 
   /* === COLORES — Estado === */
   --color-success: #10b981;           /* verde - confirmaciones */
@@ -525,6 +527,14 @@ input[type=number] {
   gap: var(--space-4);
 }
 
+/* Agrupa icono + bloque de título a la izquierda del header.
+   Antes era un style={{ display:'flex'... }} repetido en cada módulo. */
+.page-header-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
 .page-title-block h1 {
   font-size: var(--font-2xl);     /* 1.75rem — consistente en todos los módulos */
   font-weight: var(--font-weight-bold);
@@ -539,8 +549,11 @@ input[type=number] {
   margin: var(--space-1) 0 0;
 }
 
+/* El color vive aquí, no en la prop color= del icono (lucide la sobreescribe
+   por atributo y así cada módulo repetía el mismo hex). */
 .page-title-icon {
   background: var(--color-primary-bg);
+  color: var(--color-primary);
   padding: var(--space-3);
   border-radius: var(--radius-lg);
   display: flex;

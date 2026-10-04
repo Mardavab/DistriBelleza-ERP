@@ -20,6 +20,23 @@
   color: var(--color-primary);
 }
 
+/* Badge de consola de plataforma (solo rol technician) */
+.sidebar-platform-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(129, 140, 248, 0.35);
+  border-radius: var(--radius-base);
+  color: var(--color-primary-light);
+  font-size: var(--font-xs);
+  font-weight: var(--font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .nav-links {
   display: flex;
   flex-direction: column;

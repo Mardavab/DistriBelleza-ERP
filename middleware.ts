@@ -10,6 +10,12 @@ import { NextResponse, type NextRequest } from 'next/server'
  *   - Redirige a /no-tenant si el usuario está autenticado pero no tiene
  *     company_id en su app_metadata.
  *   - Redirige a / si el usuario autenticado intenta acceder a /login.
+ *
+ * EXCEPCIÓN (consola de plataforma):
+ *   Las cuentas con rol `technician` no pertenecen a ninguna empresa por
+ *   diseño, así que pueden entrar a / sin company_id. El claim `role` se
+ *   inyecta en app_metadata mediante la migración fase 9. Si el claim no
+ *   existe, se aplica el comportamiento seguro por defecto (redirigir).
  */
 export async function middleware(request: NextRequest) {
     let response = NextResponse.next({
@@ -43,17 +49,20 @@ export async function middleware(request: NextRequest) {
 
     const pathname = request.nextUrl.pathname
 
+    // Cuentas de plataforma: pueden navegar sin company_id.
+    const isPlatformAdmin = user?.app_metadata?.role === 'technician'
+
     // ============================================================
     // Reglas de protección de rutas
     // ============================================================
 
-    // 1) / requiere sesión válida + company_id
+    // 1) / requiere sesión válida + company_id (o rol de plataforma)
     if (pathname === '/') {
         if (!user) {
             return NextResponse.redirect(new URL('/login', request.url))
         }
         const companyId = user.app_metadata?.company_id
-        if (!companyId) {
+        if (!companyId && !isPlatformAdmin) {
             return NextResponse.redirect(new URL('/no-tenant', request.url))
         }
     }
@@ -61,14 +70,20 @@ export async function middleware(request: NextRequest) {
     // 2) /login: si ya está autenticado, redirigir a /
     if (pathname === '/login' && user) {
         const companyId = user.app_metadata?.company_id
-        if (companyId) {
+        if (companyId || isPlatformAdmin) {
             return NextResponse.redirect(new URL('/', request.url))
         }
     }
 
-    // 3) /no-tenant: solo accesible si está autenticado pero sin tenant
-    if (pathname === '/no-tenant' && !user) {
-        return NextResponse.redirect(new URL('/login', request.url))
+    // 3) /no-tenant: solo para usuarios de empresa sin tenant.
+    //    Un técnico nunca debería caer aquí.
+    if (pathname === '/no-tenant') {
+        if (!user) {
+            return NextResponse.redirect(new URL('/login', request.url))
+        }
+        if (isPlatformAdmin || user.app_metadata?.company_id) {
+            return NextResponse.redirect(new URL('/', request.url))
+        }
     }
 
     return response

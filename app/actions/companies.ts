@@ -1,68 +1,7 @@
 'use server'
 
 import { supabaseAdmin } from '../../lib/supabase'
-import { requireAuthContext, requireRole } from '../../lib/supabase/auth-helpers'
-
-export interface CompanySummary {
-    id: string
-    slug: string
-    legal_name: string
-    trade_name: string | null
-    active: boolean
-    created_at: string
-    user_count: number
-}
-
-/**
- * Lista las empresas creadas por el usuario actual.
- *
- * Acceso: owner + technician (roles con capacidad de plataforma).
- * Para Distribelleza el dueño es owner; el rol técnico también puede
- * gestionar el catálogo de empresas clientes.
- *
- * Defensive: si la columna created_by aún no existe (antes de correr
- * la migración Fase 8), retorna todas las empresas en vez de fallar.
- */
-export async function getMyCompanies(): Promise<{
-    success: boolean
-    data?: CompanySummary[]
-    error?: string
-}> {
-    try {
-        const ctx = await requireAuthContext()
-        requireRole(['technician'])
-
-        // Detectar si created_by existe (defensa antes de la migración Fase 8)
-        const hasCreatedBy = await checkColumnExists('companies', 'created_by')
-
-        let companiesQuery = supabaseAdmin
-            .from('companies')
-            .select('id, slug, legal_name, trade_name, active, created_at')
-
-        if (hasCreatedBy) {
-            companiesQuery = companiesQuery.eq('created_by', ctx.user.id)
-        }
-
-        const { data: companies, error } = await companiesQuery
-            .order('created_at', { ascending: false })
-
-        if (error) throw error
-
-        const withCounts: CompanySummary[] = []
-        for (const c of companies ?? []) {
-            const { count: user_count } = await supabaseAdmin
-                .from('profiles')
-                .select('id', { count: 'exact', head: true })
-                .eq('company_id', c.id)
-
-            withCounts.push({ ...c, user_count: user_count ?? 0 })
-        }
-
-        return { success: true, data: withCounts }
-    } catch (err: any) {
-        return { success: false, error: mapError(err.message) }
-    }
-}
+import { requirePlatformRole } from '../../lib/supabase/auth-helpers'
 
 /**
  * Crea una nueva empresa (tenant) con su configuración inicial.
@@ -88,8 +27,9 @@ export async function createCompany(payload: {
     initialOwnerEmail?: string
 }) {
     try {
-        const ctx = await requireAuthContext()
-        requireRole(['technician'])
+        // Las cuentas de plataforma no tienen company_id: se usa
+        // requirePlatformRole en lugar de requireRole.
+        const ctx = await requirePlatformRole(['technician'])
 
         if (!payload.legal_name?.trim()) {
             return { success: false, error: 'Razón social es obligatoria.' }

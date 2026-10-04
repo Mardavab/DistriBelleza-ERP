@@ -136,9 +136,9 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
     return (
 <div className="page-container">
             <header className="page-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+                <div className="page-header-group">
                     <div className="page-title-icon">
-                        <Users size={28} color="var(--color-primary)" />
+                        <Users size={28} />
                     </div>
                     <div className="page-title-block">
                         <h1>Gestión de Personal</h1>

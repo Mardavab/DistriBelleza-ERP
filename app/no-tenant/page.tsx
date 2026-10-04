@@ -1,4 +1,5 @@
 import { signOut } from '../actions/auth'
+import { UserX } from 'lucide-react'
 
 export default function NoTenantPage() {
     return (
@@ -7,82 +8,66 @@ export default function NoTenantPage() {
             justifyContent: 'center',
             alignItems: 'center',
             minHeight: '100vh',
-            background: '#f1f5f9',
-            fontFamily: 'system-ui, sans-serif',
-            padding: '20px',
+            background: 'var(--color-bg)',
+            padding: 'var(--space-6)',
         }}>
-            <div style={{
-                background: 'white',
-                padding: '40px',
-                borderRadius: '12px',
+            <div className="ui-card" style={{
                 maxWidth: '520px',
                 width: '100%',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
                 textAlign: 'center',
+                padding: 'var(--space-10)',
             }}>
                 <div style={{
                     width: '64px',
                     height: '64px',
-                    margin: '0 auto 16px',
-                    background: '#fef3c7',
-                    borderRadius: '50%',
+                    margin: '0 auto var(--space-6)',
+                    background: 'var(--color-warning-light)',
+                    borderRadius: 'var(--radius-2xl)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: '32px',
                 }}>
-                    ⚠️
+                    <UserX size={32} color="var(--color-warning-dark)" />
                 </div>
 
                 <h1 style={{
-                    color: '#0f172a',
-                    fontSize: '1.5rem',
-                    fontWeight: 600,
-                    marginBottom: '12px',
+                    color: 'var(--color-text)',
+                    fontSize: 'var(--font-xl)',
+                    fontWeight: 'var(--font-weight-bold)',
+                    margin: '0 0 var(--space-3)',
                 }}>
-                    Usuario sin empresa asignada
+                    Sin empresa asignada
                 </h1>
 
                 <p style={{
-                    color: '#64748b',
-                    marginBottom: '24px',
-                    lineHeight: 1.5,
+                    color: 'var(--color-text-mute)',
+                    marginBottom: 'var(--space-6)',
+                    lineHeight: 1.6,
+                    fontSize: 'var(--font-base)',
                 }}>
-                    Tu cuenta está autenticada pero no pertenece a ninguna empresa.
-                    Esto sucede cuando un usuario fue creado antes del flujo de invitaciones
-                    multi-tenant, o si tu perfil perdió la asignación de empresa.
+                    Tu cuenta está autenticada pero no pertenece a ninguna empresa,
+                    así que no hay un tenant al que entrar.
                 </p>
 
-                <div style={{
-                    background: '#f8fafc',
-                    padding: '16px',
-                    borderRadius: '8px',
-                    marginBottom: '24px',
-                    fontSize: '0.875rem',
-                    color: '#475569',
+                <div className="ui-alert ui-alert-warning" style={{
                     textAlign: 'left',
+                    display: 'block',
+                    marginBottom: 'var(--space-6)',
                 }}>
-                    <strong>Solución:</strong>
-                    <ol style={{ marginTop: '8px', paddingLeft: '20px' }}>
-                        <li>Cierra sesión (botón abajo)</li>
-                        <li>Vuelve a iniciar sesión para regenerar tu sesión</li>
-                        <li>Si el problema persiste, contacta al administrador</li>
+                    <strong style={{ display: 'block', marginBottom: 'var(--space-2)' }}>
+                        Esto puede significar dos cosas:
+                    </strong>
+                    <ol style={{ margin: 0, paddingLeft: 'var(--space-5)', lineHeight: 1.7 }}>
+                        <li>Falta una invitación: pídele al administrador de la plataforma que te invite a una empresa.</li>
+                        <li>Tu empresa fue desactivada o te retiraron de ella: entonces este acceso ya no es válido.</li>
                     </ol>
                 </div>
 
                 <form action={signOut}>
                     <button
                         type="submit"
-                        style={{
-                            padding: '12px 24px',
-                            background: '#6366f1',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '0.875rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                        }}
+                        className="ui-btn ui-btn-primary"
+                        style={{ width: '100%' }}
                     >
                         Cerrar sesión
                     </button>

@@ -178,9 +178,9 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
   return (
     <div className="reports-view animate-fade-in">
       <header className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <div className="page-header-group">
           <div className="page-title-icon">
-            <FileText size={28} color="var(--color-primary)" />
+            <FileText size={28} />
           </div>
           <div className="page-title-block">
             <h1>Panel de Reportes</h1>

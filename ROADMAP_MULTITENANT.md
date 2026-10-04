@@ -50,7 +50,9 @@ Cualquier fase que no cumpla estas reglas se rediseña antes de ejecutarse.
 | 5 | RLS real | Alto | 3-5 | Alto |
 | 6 | Branding y reglas parametrizadas | Medio-Alto | 3-5 | Bajo |
 | 7 | Cleanup final | Bajo | 1 | Bajo |
-| **Total** | — | — | **16-25** | — |
+| 8 | Platform admin (`created_by`) | Bajo | 0.5 | Bajo |
+| 9 | Consola de plataforma | Bajo-Medio | 1-2 | Bajo |
+| **Total** | — | — | **17.5-28.5** | — |
 
 **Hallazgos del diagnóstico original que se cierran con este roadmap:** 11 de 33.
 **Hallazgos que quedan para Fase 6+ (post-multi-tenant, ver sección final):** 22 de 33.
@@ -2264,6 +2266,128 @@ rm -rf backups/20261003_pre_multitenant_data.sql
 rm -rf backups/csv/20261003/
 # Mantener backups/legacy/schema_pre_multitenant.sql como referencia histórica
 ```
+
+---
+
+# Fase 9 — Consola de plataforma
+
+**Objetivo:** dar al administrador de plataforma (`technician`) una vista operativa
+del sistema, y permitir desactivar empresas de forma reversible.
+
+Las cuentas `technician` **no pertenecen a ninguna empresa** por diseño: su alcance es
+la plataforma, no los datos de negocio de los tenants.
+
+## 9.1 Cuentas de plataforma sin `company_id`
+
+El flujo original rechazaba a estas cuentas antes de evaluar el rol:
+
+- `auth.ts` devolvía "Usuario sin empresa asignada" si el JWT no traía `company_id`.
+- `middleware.ts` redirigía a `/no-tenant` por la misma condición.
+- `requireAuthContext()` lanzaba `NO_COMPANY_CONTEXT`, dejando inutilizables
+  `getMyCompanies` y `createCompany`.
+
+Corrección aplicada en código:
+
+- `auth.ts` resuelve el rol desde `profiles` y permite el acceso directo si es `technician`.
+- `middleware.ts` acepta `app_metadata.role === 'technician'` sin `company_id`.
+- Nuevo helper `requirePlatformRole()` para acciones de plataforma (no exige empresa).
+
+## 9.2 Claim `role` en el JWT
+
+La migración `20261003400002` solo inyectó `company_id` + `role` para usuarios con
+`company_id NOT NULL`. Las cuentas de plataforma nunca recibieron el claim, y el
+middleware lo necesita para no redirigirlas.
+
+Esta migración hace el backfill de `role` para **todos** los usuarios, usando `||`
+(merge) para no tocar el claim `company_id` ya presente.
+
+### Nota: el técnico SÍ tiene `company_id`
+
+A diferencia de lo que se suele asumir, una cuenta de plataforma **no** está
+libre de empresa:
+
+- La fase 2.5 (`20261003200300`) puso `profiles.company_id` en **NOT NULL**.
+- El backfill de la fase 2.2 tuvo que asignar una empresa a *toda* cuenta existente.
+- El técnico quedó vinculado al tenant `1111-1111-1111-1111-111111111111`
+  (Distribelleza, el UUID fijo creado en `20261003200000`).
+
+Esto **no** es un error ni una fuga de datos. Tener `company_id` no concede acceso:
+el acceso lo gobierna el rol. El técnico nunca ve POS, inventario ni reportes de
+Distribelleza; su alcance es la consola de plataforma.
+
+`getUserProfile()` fuerza `companies: null` para el rol `technician` precisamente
+para que ningún código futuro confunda "tener company_id" con "tener acceso a esa
+empresa".
+
+## 9.3 Activar / desactivar empresas
+
+```bash
+# Ejecutar en Supabase SQL Editor
+\i migrations/fase-9-gestion-empresas/20261003700000_gestion_empresas.sql
+```
+
+Añade a `companies`:
+
+| Columna | Tipo | Uso |
+|---|---|---|
+| `deactivation_reason` | TEXT | Motivo del retiro (auditoría) |
+| `deactivated_at` | TIMESTAMPTZ | Fecha de desactivación |
+
+Incluye un constraint `companies_deactivation_consistency` que hace `active` y
+`deactivated_at` **complementarios** (XOR explícito):
+
+| `active` | `deactivated_at` | Motivo |
+|---|---|---|
+| `true` | `NULL` | Empresa activa |
+| `false` | no `NULL` | Inactiva, con fecha de retiro |
+
+Sin la primera mitad del XOR la columna quedaba libre: una empresa podía estar
+activa con fecha de desactivación. Se crea `NOT VALID` y se valida en la misma
+transacción, tras normalizar los datos existentes, para no bloquear escrituras
+concurrentes.
+
+**Desactivar es reversible y no borra datos.** `auth.ts` ya rechazaba el login de
+empresas inactivas; esta fase añade la vía de UI para cambiar ese estado.
+
+Rollback: `migrations/fase-9-gestion-empresas/RK_20261003700000_rollback_gestion_empresas.sql`
+
+**Rollback parcial a propósito.** Revertir el claim `role` selectivamente es
+imposible: la fase 2.5 dejó `profiles.company_id` en `NOT NULL`, así que no
+existe forma de distinguir qué usuarios lo recibieron en esta fase de cuáles lo
+tenían desde `20261003400002`. Un revert global dejaría sin claim a los usuarios
+de empresa. Además el claim es inocuo —solo espeja `profiles.role`, que es la
+fuente de verdad— y se reinyecta en cada login. Por eso el rollback solo
+elimina columnas, índice y constraint, y documenta el comando manual por si
+algún día hace falta.
+
+## 9.4 Qué ve el administrador de plataforma
+
+Sidebar reducido a tres secciones:
+
+| Sección | Contenido |
+|---|---|
+| Consola de Plataforma | KPIs: estado del sistema, empresas activas, sin uso reciente, usuarios |
+| Salud del Sistema | Chequeos: base de datos, print service, tenants, admins configurados |
+| Empresas | Todas las empresas con actividad y toggle activar/desactivar |
+
+**No** incluye POS, Inventario, Proveedores, Reportes, Gastos ni Configuración:
+esos datos son privados de cada empresa y no se exponen al técnico.
+
+"Sin uso reciente" = más de 30 días sin ventas registradas. Es la señal de si una
+empresa está usando el sistema.
+
+## 9.5 Limitaciones conocidas
+
+- **Los health checks son de infraestructura, no de negocio.** Detectan caídas de
+  Supabase y del print service. No capturan errores de las operaciones de negocio:
+  para eso haría falta una tabla `app_errors` (no incluida en esta fase).
+- **Desactivar no invalida sesiones activas.** `auth.ts:44` bloquea el login, pero
+  un token ya emitido sigue funcionando hasta expirar. Para bloqueo inmediato
+  habría que revocar sesiones desde Supabase Auth.
+- **`getAllCompanies()` no filtra por `created_by`.** El panel original solo
+  mostraba las empresas creadas por el propio técnico. Como administrador de
+  plataforma necesita ver todas; esto amplía su visibilidad sobre el resto de
+  los usuarios de empresa (que ya son los owners de sus propios datos).
 
 ---
 

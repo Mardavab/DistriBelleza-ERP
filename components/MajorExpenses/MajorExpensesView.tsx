@@ -42,9 +42,9 @@ export default function MajorExpensesView() {
     return (
         <div className="page-container">
             <header className="page-header">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+                <div className="page-header-group">
                     <div className="page-title-icon">
-                        <Building2 size={28} color="var(--color-primary)" />
+                        <Building2 size={28} />
                     </div>
                     <div className="page-title-block">
                         <h1>Gastos Mayores</h1>

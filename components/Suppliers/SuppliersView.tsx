@@ -1083,9 +1083,9 @@ const [billedToOptions, setBilledToOptions] = useState<string[]>(['Norby', 'Marl
     <div className="suppliers-root">
       {/* Header unificado */}
       <header className="page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+        <div className="page-header-group">
           <div className="page-title-icon">
-            <Truck size={28} color="var(--color-primary)" />
+            <Truck size={28} />
           </div>
           <div className="page-title-block">
             <h1>Proveedores</h1>

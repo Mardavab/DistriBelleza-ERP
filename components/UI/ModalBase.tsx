@@ -89,6 +89,8 @@ interface ModalButtonProps {
     children: React.ReactNode;
     variant?: 'primary' | 'secondary' | 'danger';
     type?: 'submit' | 'button';
+    /** id del <form> externo al que se asocia (ModalFooter vive fuera del form). */
+    form?: string;
     style?: React.CSSProperties;
 }
 
@@ -99,6 +101,7 @@ export function ModalButton({
     children,
     variant = 'primary',
     type = 'button',
+    form,
     style,
 }: ModalButtonProps) {
     return (
@@ -107,6 +110,7 @@ export function ModalButton({
             className={`ui-btn ui-btn-${variant}`}
             onClick={onClick}
             disabled={disabled || loading}
+            form={form}
             style={style}
         >
             {loading ? '...' : children}

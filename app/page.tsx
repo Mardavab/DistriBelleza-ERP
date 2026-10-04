@@ -4,13 +4,15 @@ import React, { useState, useEffect } from 'react';
 import { LayoutDashboard } from 'lucide-react';
 import { getUserProfile } from './actions/auth';
 import { getCurrentCompanyAction } from './actions/company';
-import Sidebar from '../components/Dashboard/Sidebar';
+import Sidebar, { BUSINESS_TABS } from '../components/Dashboard/Sidebar';
 import Dashboard from '../components/Dashboard/Dashboard';
 import POS from '../components/POS/POS';
 import InventoryView from '../components/Inventory/InventoryView';
 import ReportsView from '../components/Reports/ReportsView';
 import UserManagement from '../components/UI/UserManagement';
 import CompaniesPanel from '../components/Platform/CompaniesPanel';
+import PlatformDashboard from '../components/Platform/PlatformDashboard';
+import SystemHealth from '../components/Platform/SystemHealth';
 import SuppliersView from '../components/Suppliers/SuppliersView';
 import MajorExpensesView from '../components/MajorExpenses/MajorExpensesView';
 import '../components/Dashboard/Dashboard.css';
@@ -21,6 +23,9 @@ export default function Home() {
   const [companyName, setCompanyName] = useState<string>('');
   const [loading, setLoading] = useState(true);
 
+  const role = profile?.role || null;
+  const isPlatformAdmin = role === 'technician';
+
   useEffect(() => {
     async function load() {
       try {
@@ -30,6 +35,13 @@ export default function Home() {
           return;
         }
         setProfile(p);
+
+        // Una cuenta de plataforma no tiene empresa: se salta la consulta.
+        if (p.role === 'technician') {
+          setActiveTab('platform');
+          return;
+        }
+
         const company = await getCurrentCompanyAction();
         if (company) {
           setCompanyName(company.trade_name || company.legal_name);
@@ -44,16 +56,42 @@ export default function Home() {
     load();
   }, []);
 
+  // Defensa en profundidad: si el rol cambia o se manipula el estado,
+  // se cae al tab por defecto del rol en vez de renderizar datos de empresa.
+  useEffect(() => {
+    if (!role) return;
+    if (isPlatformAdmin && BUSINESS_TABS.includes(activeTab)) {
+      setActiveTab('platform');
+      return;
+    }
+    if (!isPlatformAdmin && ['platform', 'health'].includes(activeTab)) {
+      setActiveTab('dashboard');
+    }
+  }, [role, activeTab, isPlatformAdmin]);
+
   if (loading) return (
     <div className="dashboard-layout" style={{ justifyContent: 'center', alignItems: 'center' }}>
       <div style={{ textAlign: 'center' }}>
-        <h2 style={{ color: '#6366f1' }}>Iniciando sistema...</h2>
-        <p style={{ color: '#64748b', fontSize: '0.875rem' }}>Verificando credenciales</p>
+        <h2 style={{ color: 'var(--color-primary)' }}>Iniciando sistema...</h2>
+        <p style={{ color: 'var(--color-text-mute)', fontSize: 'var(--font-base)' }}>Verificando credenciales</p>
       </div>
     </div>
   );
 
   const renderContent = () => {
+    // Consola de plataforma: sin acceso a módulos de negocio.
+    if (isPlatformAdmin) {
+      switch (activeTab) {
+        case 'companies':
+          return <CompaniesPanel />;
+        case 'health':
+          return <SystemHealth />;
+        case 'platform':
+        default:
+          return <PlatformDashboard />;
+      }
+    }
+
     switch (activeTab) {
       case 'dashboard':
         return <Dashboard />;
@@ -71,10 +109,6 @@ export default function Home() {
         return (profile?.role === 'owner')
           ? <UserManagement currentUserRole={profile?.role} />
           : <div className="p-8 text-slate-500">No tienes permiso para acceder a esta sección.</div>;
-      case 'companies':
-        return (profile?.role === 'technician')
-          ? <CompaniesPanel />
-          : <div className="p-8 text-slate-500">No tienes permiso para acceder a esta sección.</div>;
       default:
         return <Dashboard />;
     }
@@ -89,11 +123,11 @@ export default function Home() {
         companyName={companyName}
       />
       <main className={`main-content${activeTab === 'pos' ? ' pos-active' : ''}`}>
-        {activeTab === 'dashboard' ? (
+        {!isPlatformAdmin && activeTab === 'dashboard' ? (
           <header className="page-header" style={{ marginBottom: 'var(--space-6)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-4)' }}>
+            <div className="page-header-group">
               <div className="page-title-icon">
-                <LayoutDashboard size={28} color="var(--color-primary)" />
+                <LayoutDashboard size={28} />
               </div>
               <div className="page-title-block">
                 <h1 style={{ textTransform: 'capitalize' }}>Dashboard</h1>
