@@ -52,7 +52,8 @@ Cualquier fase que no cumpla estas reglas se rediseña antes de ejecutarse.
 | 7 | Cleanup final | Bajo | 1 | Bajo |
 | 8 | Platform admin (`created_by`) | Bajo | 0.5 | Bajo |
 | 9 | Consola de plataforma | Bajo-Medio | 1-2 | Bajo |
-| **Total** | — | — | **17.5-28.5** | — |
+| 10 | Multi-empresa (membresías + RLS + selector) | Alto | 4-6 | Alto |
+| **Total** | — | — | **21.5-34.5** | — |
 
 **Hallazgos del diagnóstico original que se cierran con este roadmap:** 11 de 33.
 **Hallazgos que quedan para Fase 6+ (post-multi-tenant, ver sección final):** 22 de 33.
@@ -2388,6 +2389,154 @@ empresa está usando el sistema.
   mostraba las empresas creadas por el propio técnico. Como administrador de
   plataforma necesita ver todas; esto amplía su visibilidad sobre el resto de
   los usuarios de empresa (que ya son los owners de sus propios datos).
+
+---
+
+# Fase 10 — Multi-empresa por usuario
+
+**Objetivo:** permitir que un mismo `auth.users` pertenezca a varias empresas
+y active la que necesite en cada momento, con **rol por empresa** (no global).
+
+Hoy la base está en un modelo 1:1: `profiles.company_id` es `NOT NULL` y las
+16 políticas RLS filtran por ese campo. Esto es un vallado deliberado para
+multi-tenancy estricto, pero choca con la realidad de un dueño de varios
+negocios, que tiene que crear una cuenta por empresa.
+
+## 10.1 Modelo
+
+```
+auth.users (1) ──< company_memberships >── (1) companies
+                  (user_id, company_id,
+                   role, is_default)
+```
+
+| Concepto | Antes | Ahora |
+|---|---|---|
+| ¿A qué empresas pertenezco? | `profiles.company_id` (1) | `company_memberships` (N) |
+| ¿Qué rol tengo? | `profiles.role` (global) | `company_memberships.role` (por empresa) |
+| ¿Cuál está activa ahora? | implícita | `company_memberships.is_default` + cookie de selección |
+
+- Se conserva `profiles.company_id` como **nullable** y como cache de la
+  membresía por defecto, para no romper joins legacy.
+- `profiles.role` se **elimina** al final (fase 5 de esta lista).
+- `user_role` es el mismo ENUM existente (`'owner','manager','technician'`),
+  reusado en `company_memberships.role`.
+
+## 10.2 JWT sigue cargando el tenant activo
+
+Decidido: el JWT lleva un único `company_id` (el activo). El selector del
+sidebar llama a un endpoint que refresca el JWT con la nueva empresa, y el
+RLS sigue leyendo `auth.jwt() -> 'app_metadata' ->> 'company_id'` igual que
+hoy. Esto minimiza la reescritura de políticas y mantiene el comportamiento
+idéntico a un login.
+
+Razón: el RLS no necesita un `SET LOCAL` por request, no hay que pasar
+`x-company-id` en cada server action, y el cache de RLS por JWT sigue
+funcionando.
+
+## 10.3 Lo que **no** cambia
+
+- La **consola de plataforma** del técnico: no tiene membresía, ve todas
+  las empresas, JWT sin `company_id`. Su RLS y `requirePlatformRole` no se
+  tocan.
+- Los **RPC tenant_*** (`tenant_process_sale`, etc.) que ya parametrizan
+  `company_id` explícitamente: siguen igual.
+- El **storage RLS** (avatars, etc.): independiente de esta fase.
+
+## 10.4 Fases de implementación
+
+Cada fase termina en un commit desplegable por sí solo, salvo la 4 que
+necesita la 3.
+
+| # | Commit | Migración SQL | RLS | Riesgo |
+|---|---|---|---|---|
+| 0 | `feat(memberships): tabla + backfill` | `20261004000000` + `20261004000001` | No | Bajo |
+| 1 | `refactor(profiles): quitar NOT NULL a company_id` | `20261004000002` | No | Bajo |
+| 2 | `refactor(auth): leer membresías, no profiles.company_id` | — | No | Medio (mucho código) |
+| 3 | `feat(ui): selector de empresa en el sidebar` | — | No | Medio (UX nueva) |
+| 4 | `feat(rls): políticas vía company_memberships` | `20261004000003` | **Sí** | **Alto** (seguridad) |
+| 5 | `refactor: eliminar profiles.role` | `20261004000004` | No | Bajo |
+
+### Fase 0 — Tabla y backfill (este commit)
+- Crea `company_memberships` con PK compuesta, `role user_role`, `is_default`,
+  índice único de default por usuario.
+- Inserta una fila por cada `profiles` con `company_id` (estado actual).
+- **Reversible** borrando la tabla; el rollback borra solo el backfill
+  (dejando la tabla vacía).
+
+### Fase 1 — Quitar NOT NULL
+- `ALTER TABLE profiles ALTER COLUMN company_id DROP NOT NULL`.
+- No borra `role` aún: el código actual lo sigue leyendo hasta la fase 2.
+- Idempotente (no falla si ya se quitó el NOT NULL).
+
+### Fase 2 — Refactor de auth (sin tocar RLS)
+- `getUserProfile()` devuelve `memberships[]` con la empresa anidada.
+- `getCurrentCompanyAction()` toma la empresa activa del JWT y valida
+  contra `company_memberships`.
+- `requireAuthContext()` valida la membresía en vez de leer
+  `profiles.company_id`.
+- Selector inicial: una sola membresía → esa; varias → la `is_default`.
+- El sistema sigue funcionando con el RLS actual (el JWT trae un único
+  `company_id` igual que antes).
+
+### Fase 3 — Selector de empresa en el sidebar
+- Componente nuevo: lista de membresías con rol al lado.
+- Cambiar la empresa persiste en una cookie `current_company_id` y
+  refresca el JWT (`supabase.auth.refreshSession()` con overrides en
+  `app_metadata`).
+- La sidebar reagrupa si las membresías son 2+; si es 1, oculta el selector.
+
+### Fase 4 — RLS vía membresías
+- Reescribe las políticas de las 16 tablas per-tenant. Cada una pasa de:
+
+  ```sql
+  USING (company_id = (auth.jwt() -> 'app_metadata' ->> 'company_id')::uuid)
+  ```
+
+  a:
+
+  ```sql
+  USING (
+    EXISTS (
+      SELECT 1 FROM company_memberships m
+      WHERE m.user_id = auth.uid()
+        AND m.company_id = <tabla>.company_id
+    )
+  )
+  ```
+- Esto hace que un usuario con membresía en A y B **pueda** ver datos de
+  ambas cambiando el JWT (no con un mismo JWT).
+- **El commit más arriesgado.** Requiere pruebas manuales con cuenta
+  multi-membresía y verificación de que ningún rol pierde acceso.
+
+### Fase 5 — Limpieza final
+- `ALTER TABLE profiles DROP COLUMN role`.
+- `profiles.company_id` queda como nullable permanente.
+- `grep -r "profiles.role"` debe devolver 0 referencias en `app/` y
+  `components/`.
+
+## 10.5 Riesgos y decisiones pendientes
+
+1. **Enum `user_role`**: confirmado con grep, los únicos roles son
+   `owner`, `manager`, `technician`. No hay `cashier`.
+2. **Reutilizar el ENUM**: `company_memberships.role` usa el mismo tipo
+   `user_role` para no introducir un segundo enumerado que después haya
+   que mantener en paralelo.
+3. **Reversibilidad**: el rollback de la fase 4 (RLS) está documentado en
+   el archivo pero **no es automático** — un rollback del RLS mal
+   sincronizado puede dejar la base sin protección. La fase 4 se prueba
+   con cuenta multi-membresía antes de cerrar el commit.
+
+## 10.6 Verificación de cada fase
+
+| Fase | Antes de seguir |
+|---|---|
+| 0 | `SELECT count(*) FROM company_memberships` = `count(*) FROM profiles WHERE company_id IS NOT NULL` |
+| 1 | `ALTER TABLE profiles ... IS NULL` permitido en una fila de prueba |
+| 2 | Login con owner de Distribelleza sigue entrando y ve los mismos datos |
+| 3 | Selector visible, cambio actualiza la cookie y el nombre de empresa en la sidebar |
+| 4 | Owner con 2 membresías ve los datos correctos según cookie; con 1 sigue igual |
+| 5 | `grep -r "profiles.role" --include=*.ts --include=*.tsx app components` = 0 |
 
 ---
 
