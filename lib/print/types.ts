@@ -6,6 +6,7 @@ export type PrintErrorCode =
   | 'unsupported'         // El navegador no soporta WebUSB (no es Chrome/Edge).
   | 'no-device'           // No hay dispositivo autorizado/seleccionado.
   | 'permission-denied'  // El usuario canceló el diálogo o denegó el permiso.
+  | 'driver-conflict'     // Windows tiene un driver que bloquea el dispositivo.
   | 'device-lost'         // El dispositivo se desconectó.
   | 'transfer-failed'     // Falló la transferencia USB.
   | 'unsupported-device'  // El dispositivo no parece ser una impresora ESC/POS.

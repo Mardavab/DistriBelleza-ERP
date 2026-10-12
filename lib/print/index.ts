@@ -120,12 +120,11 @@ class PrinterFacade {
       } catch (e) {
         const err = e as PrintError;
         errors.push(err);
-        // Si el dispositivo no es compatible (CH340 o no-printer),
-        // seguimos a Web Serial.
-        if (err.code === 'unsupported-device' || err.code === 'unsupported') {
-          // continuar
-        } else {
-          // permission-denied o transfer-failed: también probamos serial
+        // Conflicto de driver en Windows: NO probar fallback porque la
+        // JAL58M no expone puerto serie en este caso.
+        if (err.code === 'driver-conflict') {
+          this.setStatus('denied');
+          throw err;
         }
       }
     }
@@ -144,14 +143,12 @@ class PrinterFacade {
 
     // Ambos fallaron: reportamos el último error con un mensaje unificado.
     const last = errors[errors.length - 1];
-    const bothFailed = errors.length === 2;
-    if (last?.code === 'permission-denied' && bothFailed) {
+    if (last?.code === 'permission-denied' && errors.length === 2) {
       this.setStatus('denied');
       throw makeError(
         'permission-denied',
-        'No se pudo abrir ni el USB ni el puerto serie. Esto casi siempre pasa cuando Windows ' +
-          'ya cargó un driver de la impresora que bloquea el acceso del navegador. ' +
-          'Ver guía al final del mensaje.',
+        'No se pudo abrir ni el USB ni el puerto serie. ' +
+          'Verificá que la impresora esté enchufada, encendida, y que ningún otro programa la esté usando.',
       );
     }
     if (last?.code === 'unsupported') {

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Printer, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
 import { printer, type PrintError } from '../../lib/print';
+import SetupGuide from './SetupGuide';
 
 export interface ReceiptData {
   saleId: string;
@@ -36,6 +37,8 @@ function describeError(err: PrintError): string {
   switch (err.code) {
     case 'unsupported':
       return 'Tu navegador no soporta impresión USB directa. Usá Chrome o Edge actualizado.';
+    case 'driver-conflict':
+      return 'Windows tiene un driver de la impresora que bloquea el acceso del navegador. Seguí la guía de abajo para solucionarlo (Zadig + WinUSB).';
     case 'permission-denied':
       return err.message ||
         'No se autorizó la impresora. Tocá "Conectar" arriba y elegí tu impresora de la lista.';
@@ -55,10 +58,12 @@ function describeError(err: PrintError): string {
 export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
   const [status, setStatus] = useState<PrintStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [errorCode, setErrorCode] = useState<string>('');
 
   const handlePrint = async () => {
     setStatus('printing');
     setErrorMsg('');
+    setErrorCode('');
 
     try {
       if (!printer.isSupported()) {
@@ -84,6 +89,7 @@ export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
       const err = e as PrintError;
       setStatus('error');
       setErrorMsg(describeError(err));
+      setErrorCode(err.code);
     }
   };
 
@@ -135,6 +141,11 @@ export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
             <AlertTriangle size={20} /> REINTENTAR
           </button>
           <div className="print-msg error">{errorMsg}</div>
+          {errorCode === 'driver-conflict' && (
+            <div style={{ marginTop: '12px' }}>
+              <SetupGuide />
+            </div>
+          )}
         </>
       )}
     </div>

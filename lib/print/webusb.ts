@@ -77,12 +77,8 @@ export class WebUsbPrinter {
       // pero no se puede abrir.
       if (name === 'SecurityError') {
         throw makeError(
-          'permission-denied',
-          'Windows está bloqueando el acceso a la impresora. ' +
-            'El driver de la impresora (suele ser Jaltech o genérico) ya tiene ' +
-            'reclamado el puerto USB. Soluciones: 1) desinstalar el driver de la ' +
-            'impresora desde "Administrador de dispositivos", 2) usar Zadig para ' +
-            'instalar el driver WinUSB sobre el dispositivo.',
+          'driver-conflict',
+          'Windows está bloqueando el acceso a la impresora porque su driver ya tiene reclamado el puerto USB.',
           e,
         );
       }
