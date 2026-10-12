@@ -3,13 +3,18 @@
 /**
  * Fachada de impresión para el POS.
  *
- * Encapsula la lógica de WebUSB + ESC/POS y expone:
- *   - Estado de la impresora (sin conectar / lista / denegada / no soportada).
- *   - `connect()`: pide permiso al usuario para elegir dispositivo.
- *   - `printReceipt(receipt)`: arma y manda el ticket.
- *   - `openDrawer()`: pulso de cajón sin imprimir.
+ * Estrategia de conexión:
+ *   1) Web Serial (preferida): cubre impresoras con puente USB-serial
+ *      (CH340/CH341/PL2303), caso típico de impresoras térmicas genéricas
+ *      de 58mm como la JAL58M. El driver serie de Windows no entra en
+ *      conflicto con el navegador.
+ *   2) Web USB (fallback): impresoras con descriptores USB nativos (p.ej.
+ *      Epson, Star). Falla si Windows ya reclamó el dispositivo con su
+ *      driver de impresora.
  *
- * Los componentes se suscriben a `subscribe(fn)` para reflejar el estado en UI.
+ * Si ambos están disponibles y el primero falla, probamos el segundo
+ * automáticamente. El estado (`resultado`) refleja qué tecnología quedó
+ * activa.
  */
 
 import type { ReceiptData } from '../../components/POS/PrintReceipt';
@@ -20,23 +25,29 @@ import {
   PrinterInfo,
   PrinterStatus,
 } from './types';
+import { WebSerialPrinter } from './webserial';
 import { WebUsbPrinter } from './webusb';
 
-type Listener = (status: PrinterStatus, info: PrinterInfo) => void;
+export type Transport = 'serial' | 'usb' | null;
+
+type Listener = (status: PrinterStatus, info: PrinterInfo, transport: Transport) => void;
 
 class PrinterFacade {
-  private webusb = new WebUsbPrinter();
+  private serial = new WebSerialPrinter();
+  private usb = new WebUsbPrinter();
   private listeners = new Set<Listener>();
   private status: PrinterStatus;
   private info: PrinterInfo = { status: 'disconnected' };
+  private transport: Transport = null;
   private builder = new EscPosBuilder();
 
   constructor() {
-    this.status = this.webusb.isSupported() ? 'disconnected' : 'unsupported';
+    const supported = this.serial.isSupported() || this.usb.isSupported();
+    this.status = supported ? 'disconnected' : 'unsupported';
   }
 
   isSupported(): boolean {
-    return this.webusb.isSupported();
+    return this.serial.isSupported() || this.usb.isSupported();
   }
 
   getStatus(): PrinterStatus {
@@ -47,10 +58,13 @@ class PrinterFacade {
     return this.info;
   }
 
+  getTransport(): Transport {
+    return this.transport;
+  }
+
   subscribe(fn: Listener): () => void {
     this.listeners.add(fn);
-    // emitir estado actual inmediatamente
-    fn(this.status, this.info);
+    fn(this.status, this.info, this.transport);
     return () => {
       this.listeners.delete(fn);
     };
@@ -59,55 +73,111 @@ class PrinterFacade {
   private emit(): void {
     for (const fn of Array.from(this.listeners)) {
       try {
-        fn(this.status, this.info);
+        fn(this.status, this.info, this.transport);
       } catch {
-        // no romper a otros listeners
+        // ignore
       }
     }
   }
 
-  private setStatus(status: PrinterStatus, info?: PrinterInfo): void {
+  private setStatus(status: PrinterStatus, info?: PrinterInfo, transport?: Transport): void {
     this.status = status;
     this.info = info ?? { ...this.info, status };
+    this.transport = transport ?? this.transport;
     this.emit();
   }
 
+  /**
+   * Pide al usuario que seleccione un dispositivo. Intenta Web Serial primero
+   * (cubre CH340/CH341) y cae a Web USB si está disponible.
+   *
+   * Lanza el ÚLTIMO error si ambos fallan, con un mensaje agregado.
+   */
   async connect(): Promise<PrinterInfo> {
-    if (!this.webusb.isSupported()) {
+    if (!this.isSupported()) {
       this.setStatus('unsupported');
       throw makeError(
         'unsupported',
-        'Tu navegador no soporta impresión USB directa. Usá Chrome o Edge.',
+        'Tu navegador no soporta impresión USB directa ni Web Serial. Usá Chrome o Edge actualizado.',
       );
     }
+
     this.setStatus('disconnected');
-    try {
-      const info = await this.webusb.connect();
-      this.setStatus('ready', info);
-      return info;
-    } catch (e) {
-      const err = e as PrintError;
-      if (err.code === 'unsupported') this.setStatus('unsupported');
-      else if (err.code === 'permission-denied') this.setStatus('denied');
-      else if (err.code === 'unsupported-device') this.setStatus('denied');
-      else this.setStatus('disconnected');
-      throw err;
+
+    const errors: PrintError[] = [];
+
+    // 1) Web Serial primero (cubre el caso más común: JAL58M con CH340).
+    if (this.serial.isSupported()) {
+      try {
+        const info = await this.serial.connect();
+        this.setStatus('ready', info, 'serial');
+        return info;
+      } catch (e) {
+        const err = e as PrintError;
+        errors.push(err);
+        if (err.code === 'unsupported') {
+          // no tiene sentido seguir
+          this.setStatus('denied');
+          throw err;
+        }
+      }
     }
+
+    // 2) Web USB como fallback.
+    if (this.usb.isSupported()) {
+      try {
+        const info = await this.usb.connect();
+        this.setStatus('ready', info, 'usb');
+        return info;
+      } catch (e) {
+        const err = e as PrintError;
+        errors.push(err);
+      }
+    }
+
+    // Ambos fallaron.
+    const last = errors[errors.length - 1];
+    const bothFailed = errors.length === 2;
+    if (last?.code === 'permission-denied' && bothFailed) {
+      this.setStatus('denied');
+      throw makeError(
+        'permission-denied',
+        'No se pudo abrir ni el puerto serie ni el USB. ' +
+          'Verificá que la impresora esté enchufada, encendida, y que ningún otro programa la esté usando.',
+      );
+    }
+    if (last?.code === 'unsupported') {
+      this.setStatus('unsupported');
+    } else {
+      this.setStatus('denied');
+    }
+    throw last ?? makeError('unknown', 'No se pudo conectar con la impresora.');
   }
 
   async disconnect(): Promise<void> {
-    await this.webusb.disconnect();
+    await Promise.allSettled([this.serial.disconnect(), this.usb.disconnect()]);
+    this.transport = null;
     this.setStatus('disconnected', { status: 'disconnected' });
   }
 
   async printReceipt(receipt: ReceiptData): Promise<void> {
     const bytes = this.builder.buildReceipt(receipt);
-    await this.webusb.print(bytes);
+    await this.printBytes(bytes);
   }
 
   async openDrawer(): Promise<void> {
     const bytes = escpos.buildOpenDrawer();
-    await this.webusb.print(bytes);
+    await this.printBytes(bytes);
+  }
+
+  private async printBytes(bytes: Uint8Array): Promise<void> {
+    if (this.transport === 'serial') {
+      await this.serial.print(bytes);
+    } else if (this.transport === 'usb') {
+      await this.usb.print(bytes);
+    } else {
+      throw makeError('no-device', 'No hay impresora conectada.');
+    }
   }
 }
 

@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { Printer, CheckCircle2, AlertTriangle, XCircle, Usb, Loader2 } from 'lucide-react';
-import { printer, type PrinterInfo, type PrinterStatus } from '../../lib/print';
+import { Printer, CheckCircle2, AlertTriangle, XCircle, Cable, Loader2 } from 'lucide-react';
+import { printer, type PrinterInfo, type PrinterStatus, type Transport } from '../../lib/print';
 
 const STATUS_LABELS: Record<PrinterStatus, string> = {
   ready: 'Impresora lista',
@@ -35,12 +35,14 @@ function StatusIcon({ status, busy }: { status: PrinterStatus; busy: boolean }) 
 export default function PrintStatusBadge() {
   const [status, setStatus] = useState<PrinterStatus>(printer.getStatus());
   const [info, setInfo] = useState<PrinterInfo>(printer.getInfo());
+  const [transport, setTransport] = useState<Transport>(printer.getTransport());
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    return printer.subscribe((s, i) => {
+    return printer.subscribe((s, i, t) => {
       setStatus(s);
       setInfo(i);
+      setTransport(t);
     });
   }, []);
 
@@ -63,6 +65,8 @@ export default function PrintStatusBadge() {
       setBusy(false);
     }
   }
+
+  const transportLabel = transport === 'serial' ? 'Serie' : transport === 'usb' ? 'USB' : null;
 
   return (
     <div className={`print-status-badge ${STATUS_CLASS[status]}`}>
@@ -97,17 +101,17 @@ export default function PrintStatusBadge() {
       <span className="label">
         <StatusIcon status={status} busy={busy} />
         <span>{STATUS_LABELS[status]}</span>
-        {status === 'ready' && info.productName && (
-          <span className="product-tip">· {info.productName}</span>
+        {status === 'ready' && transportLabel && (
+          <span className="product-tip">· {transportLabel}</span>
         )}
       </span>
 
       {status === 'unsupported' ? null : status === 'ready' ? (
         <button onClick={handleDisconnect} disabled={busy} title="Desconectar impresora">
-          <Usb size={12} /> Desconectar
+          <Cable size={12} /> Desconectar
         </button>
       ) : (
-        <button onClick={handleConnect} disabled={busy} title="Conectar impresora USB">
+        <button onClick={handleConnect} disabled={busy} title="Conectar impresora">
           {busy ? '…' : 'Conectar'}
         </button>
       )}
