@@ -18,6 +18,7 @@
  */
 
 import type { ReceiptData } from '../../components/POS/PrintReceipt';
+import { printViaDialog } from './browser';
 import { EscPosBuilder, escpos } from './escpos';
 import {
   makeError,
@@ -179,6 +180,18 @@ class PrinterFacade {
   async printReceipt(receipt: ReceiptData): Promise<void> {
     const bytes = this.builder.buildReceipt(receipt);
     await this.printBytes(bytes);
+  }
+
+  /**
+   * Imprime vía diálogo nativo del navegador (window.print).
+   *
+   * Funciona en cualquier PC con la impresora instalada en Windows, sin
+   * importar conflictos de drivers USB. Limitación: no permite enviar
+   * comandos ESC/POS directos (apertura de cajón, corte), porque el
+   * driver de Windows se encarga de traducir el contenido.
+   */
+  async printReceiptBrowser(receipt: ReceiptData): Promise<{ printed: boolean }> {
+    return printViaDialog(receipt);
   }
 
   async openDrawer(): Promise<void> {

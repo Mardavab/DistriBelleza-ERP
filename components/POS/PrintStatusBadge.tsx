@@ -130,7 +130,7 @@ export default function PrintStatusBadge() {
         <a
           href="#"
           onClick={(e) => { e.preventDefault(); handleReset(); }}
-          title="Borrar dispositivos授权ados por Edge y empezar de cero"
+          title="Borrar dispositivos autorizados por Edge y empezar de cero"
           className="reset-link"
         >
           Reset
