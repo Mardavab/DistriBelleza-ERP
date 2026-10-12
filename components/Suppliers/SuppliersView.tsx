@@ -296,7 +296,7 @@ function InvoiceModal({ initial, suppliers, onClose, onSaved, billedToOptions = 
           </div>
 
           <div className="form-group">
-            <label htmlFor="inv-desc">Descripción <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opcional)</span></label>
+            <label htmlFor="inv-desc">Descripción <span style={{ color: 'var(--color-text-light)', fontWeight: 400 }}>(opcional)</span></label>
             <textarea
               id="inv-desc"
               value={form.description}
@@ -307,7 +307,7 @@ function InvoiceModal({ initial, suppliers, onClose, onSaved, billedToOptions = 
           </div>
 
           <div className="form-group">
-            <label htmlFor="inv-file">Foto / Archivo de Factura <span style={{ color: '#94a3b8', fontWeight: 400 }}>(opcional)</span></label>
+            <label htmlFor="inv-file">Foto / Archivo de Factura <span style={{ color: 'var(--color-text-light)', fontWeight: 400 }}>(opcional)</span></label>
             <input 
               type="file" 
               id="inv-file" 
@@ -371,16 +371,16 @@ function AbonoModal({ invoice, onClose, onSaved }: AbonoModalProps) {
         </div>
 
         {/* Progress */}
-        <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: '14px 16px', marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#64748b', marginBottom: 8 }}>
-            <span>Abonado: <strong style={{ color: '#6366f1' }}>{formatCurrency(paid)}</strong></span>
-            <span>Total: <strong style={{ color: '#0f172a' }}>{formatCurrency(total)}</strong></span>
+        <div style={{ background: 'var(--color-bg-soft)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-md)', padding: '14px 16px', marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--font-sm)', color: 'var(--color-text-mute)', marginBottom: 8 }}>
+            <span>Abonado: <strong style={{ color: 'var(--color-primary)' }}>{formatCurrency(paid)}</strong></span>
+            <span>Total: <strong style={{ color: 'var(--color-text)' }}>{formatCurrency(total)}</strong></span>
           </div>
           <div className="abono-bar-wrap">
             <div className="abono-bar-fill" style={{ width: `${pct}%` }} />
           </div>
           <p className="abono-info" style={{ textAlign: 'right', marginTop: 6 }}>
-            Saldo pendiente: <strong style={{ color: pending > 0 ? '#b45309' : '#15803d' }}>{formatCurrency(pending)}</strong>
+            Saldo pendiente: <strong style={{ color: pending > 0 ? 'var(--color-warning-dark)' : 'var(--color-success-dark)' }}>{formatCurrency(pending)}</strong>
           </p>
         </div>
 
@@ -472,9 +472,9 @@ function PayConfirmModal({ invoice, onClose, onSaved }: PayConfirmModalProps) {
             />
           </div>
 
-          <div className="sup-modal-actions" style={{ marginTop: '16px' }}>
-            <button type="button" className="btn-secondary" onClick={onClose}>Cancelar</button>
-            <button type="submit" className="btn-primary" disabled={loading} style={{ background: '#16a34a' }}>
+          <div className="sup-modal-actions" style={{ marginTop: 'var(--space-4)' }}>
+            <button type="button" className="ui-btn ui-btn-secondary" onClick={onClose}>Cancelar</button>
+            <button type="submit" className="ui-btn ui-btn-success" disabled={loading}>
               {loading ? <RefreshCw size={16} className="spin" /> : <CheckCircle size={16} />}
               {loading ? 'Procesando…' : 'Marcar como pagada'}
             </button>

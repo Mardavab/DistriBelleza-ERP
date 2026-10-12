@@ -323,7 +323,7 @@ export default function InventoryView() {
               ))
             ) : (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: '60px', color: '#64748b' }}>
+                <td colSpan={6} style={{ textAlign: 'center', padding: 'var(--space-12) var(--space-6)', color: 'var(--color-text-mute)' }}>
                   No se encontraron productos.
                 </td>
               </tr>
@@ -452,8 +452,8 @@ const raw = parseCurrencyInput(e.target.value);
               </section>
 
               <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={() => setShowModal(false)}>Cancelar</button>
-                <button type="submit" className="btn-primary">{isEditing ? 'Guardar Cambios' : 'Registrar Producto'}</button>
+                <button type="button" className="ui-btn ui-btn-secondary" onClick={() => setShowModal(false)}>Cancelar</button>
+                <button type="submit" className="ui-btn ui-btn-primary">{isEditing ? 'Guardar Cambios' : 'Registrar Producto'}</button>
               </div>
             </form>
           </div>
@@ -493,9 +493,9 @@ const raw = parseCurrencyInput(e.target.value);
         .main-price { font-weight: 700; }
         .inherited-badge { font-size: 0.65rem; color: #94a3b8; font-style: italic; }
 
-        .action-buttons { display: flex; justify-content: flex-end; gap: 8px; }
-        .btn-icon { padding: 8px; border-radius: 8px; border: 1px solid #e2e8f0; background: white; cursor: pointer; color: #64748b; transition: all 0.2s; }
-        .btn-icon:hover { color: #6366f1; border-color: #6366f1; }
+        .action-buttons { display: flex; justify-content: flex-end; gap: var(--space-2); }
+        .btn-icon { padding: var(--space-2); border-radius: var(--radius-base); border: 1px solid var(--color-border); background: var(--bg-card); cursor: pointer; color: var(--color-text-mute); transition: all var(--transition-base); }
+        .btn-icon:hover { color: var(--color-primary); border-color: var(--color-primary); }
 
         .pagination-bar { padding: 12px 24px; background: #f8fafc; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
         .pagination-buttons { display: flex; gap: 8px; }
@@ -537,12 +537,9 @@ const raw = parseCurrencyInput(e.target.value);
         .variant-form-row { display: grid; grid-template-columns: minmax(150px, 2fr) minmax(100px, 1.5fr) 80px 120px 40px; gap: 12px; margin-bottom: 12px; align-items: center; min-width: 600px; }
         .variant-form-row input { padding: 10px; border: 1px solid #e2e8f0; border-radius: 10px; font-size: 0.9rem; width: 100%; min-width: 0; }
         .modal-actions { padding: 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
-        .btn-add-product { background: #6366f1; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.2); }
-        .btn-add-product:hover:not(:disabled) { background: #4f46e5; transform: translateY(-1px); box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3); }
-        .btn-primary { background: #0f172a; color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
-        .btn-primary:hover { background: #334155; transform: translateY(-1px); }
-        .btn-cancel { background: #fff1f2; border: 1px solid #fecaca; padding: 12px 24px; color: #e11d48; font-weight: 600; cursor: pointer; border-radius: 12px; transition: all 0.2s; }
-        .btn-cancel:hover { background: #ffe4e6; color: #be123c; border-color: #fda4af; transform: translateY(-1px); }
+        .btn-add-product { display: none; } /* reemplazado por btn-primary-page */
+        .btn-primary { display: none; } /* reemplazado por ui-btn-primary */
+        .btn-cancel { display: none; } /* reemplazado por ui-btn-secondary */
         .error-banner { background: #fef2f2; border: 1px solid #fecaca; color: #dc2626; padding: 12px; border-radius: 12px; margin-bottom: 24px; display: flex; align-items: center; gap: 10px; font-size: 0.9rem; }
         .flex-between { display: flex; justify-content: space-between; align-items: center; }
         .btn-text-action { background: none; border: none; color: #6366f1; font-weight: 600; font-size: 0.75rem; cursor: pointer; }
