@@ -31,13 +31,16 @@ export interface POSSearchResult {
 
 export async function searchPOSProducts(query: string): Promise<POSSearchResult[]> {
   noStore();
-  if (!query || query.length < 2) return [];
+  // Trim defensivo: muchos lectores de código de barras envían \r\n al final
+  // del código, y eso rompe la búsqueda con `=` (equality).
+  const cleaned = (query ?? '').replace(/[\r\n]+/g, '').trim();
+  if (!cleaned || cleaned.length < 2) return [];
 
   const companyId = await getCurrentCompanyId();
 
   const { data, error } = await supabaseAdmin.rpc('tenant_search_inventory', {
     p_company_id: companyId,
-    search_term: query
+    search_term: cleaned
   });
 
   if (error) return [];

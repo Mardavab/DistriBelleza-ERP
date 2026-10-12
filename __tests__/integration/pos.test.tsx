@@ -286,7 +286,7 @@ describe('ProductSearch', () => {
     expect(onAddToCart).not.toHaveBeenCalled();
   });
 
-  it('Enter agrega el primer resultado y limpia', () => {
+  it('Enter agrega el resultado con match EXACTO y limpia', () => {
     const onAddToCart = jest.fn();
     const setSearchTerm = jest.fn();
     const result: SearchResult = {
@@ -301,7 +301,7 @@ describe('ProductSearch', () => {
 
     const { container } = render(
       <ProductSearch
-        searchTerm="SH"
+        searchTerm="SH-001"
         setSearchTerm={setSearchTerm}
         searchResults={[result]}
         isSearching={false}
@@ -313,6 +313,38 @@ describe('ProductSearch', () => {
 
     expect(onAddToCart).toHaveBeenCalledWith(result);
     expect(setSearchTerm).toHaveBeenCalledWith('');
+  });
+
+  it('Enter NO agrega si NO hay match exacto (deja que el useEffect lo haga)', () => {
+    // Cuando el searchTerm NO coincide con ningún sku/barcode, el handler
+    // de Enter no debe agregar (puede haber un resultado "viejo" de una
+    // búsqueda anterior que NO sea el correcto).
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const oldResult: SearchResult = {
+      variant_id: 'v-old',
+      product_name: 'Old Product',
+      product_brand: 'X',
+      variant_name: '',
+      sku: 'OLD-SKU',
+      price: 100,
+      stock: 1,
+    };
+
+    const { container } = render(
+      <ProductSearch
+        searchTerm="BRAND-NEW-SKU"
+        setSearchTerm={setSearchTerm}
+        searchResults={[oldResult]} // resultado viejo de búsqueda anterior
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    // No agrega porque no hay match EXACTO al searchTerm.
+    expect(onAddToCart).not.toHaveBeenCalled();
   });
 
   /**

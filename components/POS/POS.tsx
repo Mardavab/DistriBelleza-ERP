@@ -257,7 +257,10 @@ export default function POS() {
     }
   }, [searchTerm, isShowingDefaults]);
 
-  const isBarcode = (value: string): boolean => /^\d{13}$/.test(value);
+  // Acepta 13 dígitos (EAN-13) y también limpia \r\n que muchos lectores
+  // de código de barras inyectan al final del scan.
+  const isBarcode = (value: string): boolean =>
+    /^\d{8,14}$/.test(value.replace(/[\r\n]+/g, '').trim());
 
   const addToCart = useCallback((product: any) => {
     setActiveTab('cart');
@@ -285,30 +288,31 @@ export default function POS() {
     searchInputRef.current?.focus();
   }, []);
 
+  /**
+   * Maneja el resultado de un escaneo de código de barras.
+   *
+   * Setea `searchResults` para que `ProductSearch` (que tiene la lógica
+   * de match exacto y dedup) decida si auto-agredea. No agregamos al
+   * carrito directamente — eso evitaría la doble adición (una desde acá
+   * + otra desde el useEffect de ProductSearch).
+   */
   const handleBarcodeScan = useCallback(async (code: string) => {
     const results = await searchPOSProducts(code);
-    if (results.length === 1) {
-      addToCart(results[0]);
-      setAddedProductName(results[0].product_name);
-      setShowProductAdded(true);
-      setTimeout(() => setShowProductAdded(false), 2000);
-      setSearchTerm('');
-    } else if (results.length > 1) {
-      setSearchResults(results);
-      setIsShowingDefaults(false);
-    }
-  }, [addToCart]);
+    setSearchResults(results);
+    setIsShowingDefaults(false);
+  }, []);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(async () => {
       if (searchTerm.length >= 2) {
-        if (isBarcode(searchTerm)) {
-          handleBarcodeScan(searchTerm);
+        const normalized = searchTerm.replace(/[\r\n]+/g, '').trim();
+        if (isBarcode(normalized)) {
+          handleBarcodeScan(normalized);
           return;
         }
         setIsSearching(true);
         setIsShowingDefaults(false);
-        const results = await searchPOSProducts(searchTerm);
+        const results = await searchPOSProducts(normalized);
         setSearchResults(results);
         setIsSearching(false);
       } else {

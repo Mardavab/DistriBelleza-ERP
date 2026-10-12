@@ -103,15 +103,21 @@ export default function ProductSearch({
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter' && searchResults.length > 0 && !isSearching) {
-            // Enter agrega el primer resultado y limpia.
-            // Si hay match exacto, también priorizamoslo.
-            const normalized = searchTerm.replace(/[\r\n]+/g, '').trim();
-            const exact = findExactMatch(searchResults, normalized);
-            const target = exact ?? searchResults[0];
             e.preventDefault();
-            onAddToCart(target);
+            const normalized = searchTerm.replace(/[\r\n]+/g, '').trim();
+            // Solo agregar si hay match EXACTO. Sin match exacto no hacemos
+            // fallback al primer resultado (puede ser de una búsqueda anterior
+            // y agregar el producto equivocado). Dejamos que el useEffect
+            // decida cuando llegue la nueva búsqueda.
+            const exact = findExactMatch(searchResults, normalized);
+            if (!exact) return;
+
+            // Evita doble-add si el useEffect ya agregó este mismo variant.
+            if (lastAutoAddedRef.current === exact.variant_id) return;
+
+            lastAutoAddedRef.current = exact.variant_id;
+            onAddToCart(exact);
             setSearchTerm('');
-            lastAutoAddedRef.current = target.variant_id;
             inputRef?.current?.focus();
         }
     };
