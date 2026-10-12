@@ -10,19 +10,44 @@ import { XCircle, ExternalLink, CheckCircle2 } from 'lucide-react';
  * Caso típico: la JAL58M trae un driver genérico que Windows instala y
  * queda agarrando la interfaz USB. Edge no puede reclamarla.
  *
- * Solución: reemplazar el driver por WinUSB con Zadig.
+ * Solución: reemplazar el driver por WinUSB con Zadig (o quitarlo).
  */
 export default function SetupGuide({ onClose }: { onClose?: () => void }) {
   const [step, setStep] = useState(0);
 
   const steps = [
     {
+      title: 'Verificá que Windows reconoce la impresora',
+      body: (
+        <>
+          <p>
+            Antes de tocar Zadig, confirmá que Windows ve la JAL58M:
+          </p>
+          <ol>
+            <li>Apretá <kbd>Win + X</kbd> → <strong>Administrador de dispositivos</strong>.</li>
+            <li>Buscá tu impresora en <em>{`"Colas de impresión"`}</em> o <em>{`"Controladoras de bus serie universal (USB)"`}</em>.</li>
+            <li>Clic derecho en el dispositivo → <strong>Propiedades</strong> → pestaña <strong>Detalles</strong> → propiedad <strong>{`"Id. de hardware"`}</strong>.</li>
+          </ol>
+          <p>
+            Vas a ver algo como <code>USB\VID_0416&amp;PID_5011\...</code>. Anotá el
+            <strong> VID </strong>(4 caracteres después de <code>VID_</code>) y el
+            <strong> PID </strong>(después de <code>PID_</code>). Los necesitás para encontrar la impresora en Zadig.
+          </p>
+          <p className="setup-tip">
+            Si no aparece nada en el Administrador de dispositivos, el problema
+            es físico: cable, puerto USB, o la impresora apagada. Resolvé eso
+            primero.
+          </p>
+        </>
+      ),
+    },
+    {
       title: 'Descargá Zadig',
       body: (
         <>
           <p>
-            Zadig es una utilidad portable (no se instala) que reemplaza el driver de un
-            dispositivo USB por otro, en este caso <strong>WinUSB</strong>.
+            Zadig es una utilidad portable (no se instala) que reemplaza el
+            driver de un dispositivo USB por otro, en este caso <strong>WinUSB</strong>.
           </p>
           <a
             href="https://zadig.akeo.ie/"
@@ -33,47 +58,71 @@ export default function SetupGuide({ onClose }: { onClose?: () => void }) {
             <ExternalLink size={14} /> https://zadig.akeo.ie/
           </a>
           <p className="setup-tip">
-            Bajá la versión {`"Zadig"`} (no la de {`"Zadig for Web"`}). Es un ZIP que se
-            descomprime y se ejecuta.
+            Bajá la versión {`"Zadig"`} (no la de {`"Zadig for Web"`}). Es un
+            ZIP que se descomprime y se ejecuta.
           </p>
         </>
       ),
     },
     {
-      title: 'Abrí Zadig',
+      title: 'Abrí Zadig como administrador',
       body: (
         <>
-          <p>Ejecutá el archivo <code>Zadig.exe</code> como administrador.</p>
+          <p>
+            <strong>Importante.</strong> Si no lo abrís como administrador no va
+            a poder reemplazar drivers ni va a mostrar la impresora.
+          </p>
+          <ol>
+            <li>Clic derecho sobre <code>Zadig.exe</code>.</li>
+            <li>Elegí <strong>{`"Ejecutar como administrador"`}</strong>.</li>
+            <li>Si Windows pide confirmación, decí <strong>Sí</strong>.</li>
+          </ol>
           <p className="setup-tip">
-            La impresora debe estar enchufada y encendida.
-          </p>
-          <p>
-            <strong>Menú Options</strong>
-            {' '}
-            <span className="kbd">→</span>
-            {' '}
-            marcá <strong>{`"List All Devices"`}</strong> para que aparezcan los
-            dispositivos USB incluso los que ya tienen driver.
+            En la barra de título de Zadig tiene que decir
+            <em> {`"Administrator"`}</em> arriba.
           </p>
         </>
       ),
     },
     {
-      title: 'Elegí tu impresora',
+      title: 'Activar List All Devices',
       body: (
         <>
           <p>
-            En el desplegable de la izquierda elegí tu impresora.
-            Generalmente aparece como:
+            <strong>Este paso es el que casi siempre se olvida.</strong> Por
+            defecto Zadig solo muestra dispositivos sin driver cargado, por eso
+            no ves nada.
+          </p>
+          <ol>
+            <li>En Zadig andá al menú <strong>Options</strong>.</li>
+            <li>Marcá <strong>{`"List All Devices"`}</strong>.</li>
+          </ol>
+          <p>
+            Después de eso, el desplegable de la izquierda va a mostrar todos los
+            dispositivos USB: impresoras, mouse, hubs, etc.
+          </p>
+        </>
+      ),
+    },
+    {
+      title: 'Elegí tu impresora por su VID/PID',
+      body: (
+        <>
+          <p>
+            En el desplegable de Zadig, buscá el dispositivo cuyo VID y PID coincidan
+            con los que copiaste del Administrador de dispositivos (paso 1).
+          </p>
+          <p>
+            Los nombres comunes:
           </p>
           <ul>
             <li><code>USB Printer</code></li>
+            <li><code>USB Printing Support</code></li>
             <li><code>JAL58M</code> / <code>Jaltech POS 58mm</code></li>
-            <li>El nombre del driver genérico (<code>usbprint</code>)</li>
+            <li>Algo como <code>USB\VID_XXXX&PID_YYYY</code></li>
           </ul>
           <p className="setup-tip">
-            Si no la ves, desconectá y reconectá el cable USB mientras Zadig
-            está abierto, o cambiá el puerto USB.
+            Si hay varios con el mismo VID/PID, elegí el primero (el principal).
           </p>
         </>
       ),
@@ -84,17 +133,16 @@ export default function SetupGuide({ onClose }: { onClose?: () => void }) {
         <>
           <p>
             A la derecha, en el cuadro verde, elegí <strong>WinUSB</strong>
-            (recomendado) en vez del driver actual.
+            (recomendado). Hacé clic en <strong>{`"Replace Driver"`}</strong>.
           </p>
           <p>
-            Hacé clic en <strong>{`"Replace Driver"`}</strong> o{' '}
-            <strong>{`"Reinstall Driver"`}</strong>. Confirmá el diálogo de
-            Windows (pide permisos de admin).
+            Confirmá el diálogo de Windows. Si te avisa que es un driver
+            {` "sin firmar" `}, aceptá (Zadig usa drivers firmados por Microsoft,
+            es seguro).
           </p>
           <p className="setup-tip">
-            Esto deja el dispositivo accesible desde el navegador.
-            <strong>La impresora sigue imprimiendo normalmente</strong>;
-            Zadig solo cambia qué driver la maneja.
+            La barra de progreso puede tardar 20-40 segundos. <strong>No
+            desconectés</strong> la impresora mientras corre.
           </p>
         </>
       ),
@@ -109,12 +157,51 @@ export default function SetupGuide({ onClose }: { onClose?: () => void }) {
             <strong> {`"Conectar"`}</strong>.
           </p>
           <p>
-            Esta vez el popup debería授权 ya授权: la
-            impresora debería pasar a <strong>{`"Impresora lista · Serie"`}</strong>
-            (o USB, según corresponda).
+            Esta vez debería ir al popup de Edge, seleccionás la JAL58M, y el
+            badge pasa a <em>{`"Impresora lista · USB"`}</em>.
           </p>
           <p className="setup-tip">
             Si te sigue denegando, reiniciá la PC y volvé a intentar.
+          </p>
+        </>
+      ),
+    },
+    {
+      title: '¿No anda? Alternativa sin Zadig',
+      body: (
+        <>
+          <p>
+            Si Zadig no funciona en tu caso, podés desinstalar el driver de la
+            impresora desde Windows. Quedará con el driver estándar
+            <em> {`"USB Printing Support"`} </em> de Windows, que el navegador sí
+            puede usar.
+          </p>
+          <ol>
+            <li>
+              Apretá <kbd>Win + X</kbd> → <strong>Administrador de dispositivos</strong>.
+            </li>
+            <li>
+              Buscá tu impresora (en <em>{`"Colas de impresión"`}</em> o
+              <em>{` "USB"`}</em>).
+            </li>
+            <li>
+              Clic derecho → <strong>Desinstalar dispositivo</strong>.
+            </li>
+            <li>
+              Marcá <strong>{`"Eliminar el software de controlador"`}</strong> y confirmá.
+            </li>
+            <li>
+              Desconectá y reconectá el cable USB.
+            </li>
+            <li>
+              Vuelve al POS, tocá <strong>{`"Reset"`}</strong> y después
+              <strong> {`"Conectar"`}</strong>.
+            </li>
+          </ol>
+          <p className="setup-tip">
+            Windows va a querer reinstalar el driver original cada vez que
+            conectes la impresora. Si eso te molesta, después podés usar Zadig
+            para reemplazar el driver por WinUSB definitivamente.
           </p>
         </>
       ),
@@ -140,20 +227,19 @@ export default function SetupGuide({ onClose }: { onClose?: () => void }) {
         .setup-guide h3 { margin: 0 0 4px; font-size: 1rem; color: #92400e; }
         .setup-guide .progress { font-size: 0.75rem; opacity: 0.7; margin-bottom: 12px; }
         .setup-guide p { margin: 8px 0; line-height: 1.45; }
-        .setup-guide ul { margin: 6px 0; padding-left: 20px; }
-        .setup-guide code {
+        .setup-guide ul, .setup-guide ol { margin: 6px 0; padding-left: 20px; }
+        .setup-guide li { margin: 4px 0; }
+        .setup-guide code, kbd {
           background: rgba(146, 64, 14, 0.1);
           padding: 1px 6px;
           border-radius: 4px;
           font-size: 0.85em;
         }
-        .setup-tip { font-size: 0.8rem; opacity: 0.85; font-style: italic; }
-        .kbd {
-          background: #fde68a;
-          padding: 1px 6px;
-          border-radius: 4px;
-          font-family: monospace;
+        kbd {
+          border: 1px solid #fde68a;
+          background: #fef3c7;
         }
+        .setup-tip { font-size: 0.8rem; opacity: 0.85; font-style: italic; }
         .setup-link {
           display: inline-flex;
           align-items: center;
@@ -196,6 +282,7 @@ export default function SetupGuide({ onClose }: { onClose?: () => void }) {
         .close-x:hover { opacity: 1; }
         .setup-guide { position: relative; }
         .success-icon { color: #059669; }
+        .actions button:disabled { opacity: 0.4; cursor: not-allowed; }
       `}</style>
 
       {onClose && (
