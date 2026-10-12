@@ -2,6 +2,7 @@
 
 import { supabaseAdmin } from '../../lib/supabase'
 import { requirePlatformRole } from '../../lib/supabase/auth-helpers'
+import { handleActionError, err } from '../../lib/errors'
 
 /**
  * Crea una nueva empresa (tenant) con su configuración inicial.
@@ -32,13 +33,19 @@ export async function createCompany(payload: {
         const ctx = await requirePlatformRole(['technician'])
 
         if (!payload.legal_name?.trim()) {
-            return { success: false, error: 'Razón social es obligatoria.' }
+            throw err('VALIDATION', 'legal_name missing', {
+                userMessage: 'Razón social es obligatoria.',
+            })
         }
         if (!payload.trade_name?.trim()) {
-            return { success: false, error: 'Nombre comercial es obligatorio.' }
+            throw err('VALIDATION', 'trade_name missing', {
+                userMessage: 'Nombre comercial es obligatorio.',
+            })
         }
         if (!payload.slug?.trim() || !/^[a-z0-9-]+$/.test(payload.slug)) {
-            return { success: false, error: 'Slug inválido (solo minúsculas, números y guiones).' }
+            throw err('VALIDATION', 'slug invalid', {
+                userMessage: 'Slug inválido (solo minúsculas, números y guiones).',
+            })
         }
 
         const { data: existing } = await supabaseAdmin
@@ -48,7 +55,9 @@ export async function createCompany(payload: {
             .maybeSingle()
 
         if (existing) {
-            return { success: false, error: `El slug "${payload.slug}" ya existe.` }
+            throw err('CONFLICT', `slug already exists: ${payload.slug}`, {
+                userMessage: `El slug "${payload.slug}" ya existe.`,
+            })
         }
 
         // Intentar insertar con created_by; si la columna no existe,
@@ -76,7 +85,9 @@ export async function createCompany(payload: {
             .select()
             .single()
 
-        if (companyError) throw companyError
+        if (companyError) {
+            throw err('EXTERNAL', `companies.insert: ${companyError.message}`, { cause: companyError })
+        }
         const company: any = createdCompany
 
         const defaultSettings: Array<[string, string]> = [
@@ -90,13 +101,18 @@ export async function createCompany(payload: {
         ]
 
         for (const [key, value] of defaultSettings) {
-            await supabaseAdmin
+            const { error: settingError } = await supabaseAdmin
                 .from('company_settings')
                 .insert({
                     company_id: company.id,
                     key,
                     value,
                 })
+            if (settingError) {
+                throw err('EXTERNAL', `company_settings.insert(${key}): ${settingError.message}`, {
+                    cause: settingError,
+                })
+            }
         }
 
         let invitation_url: string | null = null
@@ -116,24 +132,26 @@ export async function createCompany(payload: {
                     expires_at: expiresAt,
                 })
 
-            if (invError) throw invError
+            if (invError) {
+                throw err('EXTERNAL', `invitations.insert: ${invError.message}`, { cause: invError })
+            }
 
             const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
             invitation_url = `${baseUrl}/accept-invitation?token=${token}`
 
+            // eslint-disable-next-line no-console
             console.log(`[createCompany] Invitación creada para ${payload.initialOwnerEmail}: ${invitation_url}`)
         }
 
         return {
-            success: true,
+            success: true as const,
             data: {
                 company_id: company.id,
                 invitation_url,
             },
         }
-    } catch (err: any) {
-        console.error('[createCompany]', err)
-        return { success: false, error: mapError(err.message) }
+    } catch (caught) {
+        return handleActionError(caught, 'createCompany');
     }
 }
 
@@ -154,12 +172,4 @@ async function checkColumnExists(table: string, column: string): Promise<boolean
     } catch {
         return false
     }
-}
-
-function mapError(message: string): string {
-    if (message === 'UNAUTHENTICATED') return 'No autenticado.'
-    if (message === 'NO_COMPANY_CONTEXT') return 'Tu usuario no tiene empresa asignada.'
-    if (message === 'NO_PROFILE') return 'Perfil de usuario no encontrado.'
-    if (message.startsWith('FORBIDDEN')) return message
-    return message
 }

@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '../../lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { handleActionError, err } from '../../lib/errors';
 
 export async function getMajorExpenses() {
   try {
@@ -15,14 +16,10 @@ export async function getMajorExpenses() {
       .eq('company_id', companyId)
       .order('expense_date', { ascending: false });
 
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.', data: [] };
-    }
-    console.error("Error fetching major expenses:", error);
-    return { success: false, error: error.message, data: [] };
+    if (error) throw err('EXTERNAL', `major_expenses.list: ${error.message}`, { cause: error });
+    return { success: true as const, data };
+  } catch (caught) {
+    return handleActionError(caught, 'getMajorExpenses');
   }
 }
 
@@ -37,7 +34,7 @@ export async function addMajorExpense(
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) return { success: false, error: 'No se encontró una sesión de usuario válida.' };
+    if (!user) throw err('UNAUTHENTICATED', 'no user in addMajorExpense');
 
     const { data: profile } = await supabaseAdmin
       .from('profiles')
@@ -46,7 +43,9 @@ export async function addMajorExpense(
       .maybeSingle();
 
     if (profile?.role !== 'owner') {
-      return { success: false, error: 'Solo el propietario puede registrar gastos mayores.' };
+      throw err('FORBIDDEN', 'not owner', {
+        userMessage: 'Solo el propietario puede registrar gastos mayores.',
+      });
     }
 
     const companyId = await getCurrentCompanyId();
@@ -63,15 +62,11 @@ export async function addMajorExpense(
         created_by: user.id
       });
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `major_expenses.insert: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error adding major expense:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'addMajorExpense');
   }
 }
 
@@ -80,7 +75,7 @@ export async function deleteMajorExpense(id: string) {
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
 
-    if (!user) return { success: false, error: 'No se encontró una sesión de usuario válida.' };
+    if (!user) throw err('UNAUTHENTICATED', 'no user in deleteMajorExpense');
 
     const { data: profile } = await supabaseAdmin
       .from('profiles')
@@ -89,7 +84,9 @@ export async function deleteMajorExpense(id: string) {
       .maybeSingle();
 
     if (profile?.role !== 'owner') {
-      return { success: false, error: 'Solo el propietario puede eliminar gastos mayores.' };
+      throw err('FORBIDDEN', 'not owner', {
+        userMessage: 'Solo el propietario puede eliminar gastos mayores.',
+      });
     }
 
     const companyId = await getCurrentCompanyId();
@@ -100,14 +97,10 @@ export async function deleteMajorExpense(id: string) {
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `major_expenses.delete: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error deleting major expense:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'deleteMajorExpense');
   }
 }

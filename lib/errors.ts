@@ -116,6 +116,30 @@ export function isAppError(value: unknown): value is AppError {
 }
 
 /**
+ * Type guard genérico: detecta si una respuesta de server action es éxito.
+ * Útil para narrowing de discriminated unions en componentes cliente.
+ *
+ * ```ts
+ * if (isSuccess(res)) {
+ *   // res tiene el miembro con success: true
+ * } else if (isFailure(res)) {
+ *   // res tiene el miembro con success: false
+ * }
+ * ```
+ */
+export function isSuccess<T>(value: { success: boolean; data?: T }): value is { success: true; data?: T } {
+  return value.success === true;
+}
+
+/**
+ * Type guard genérico: detecta si una respuesta de server action falló.
+ * Útil para narrowing de discriminated unions en componentes cliente.
+ */
+export function isFailure(value: { success: boolean }): value is { success: false; error: string; code: AppErrorCode } {
+  return value.success === false;
+}
+
+/**
  * Helper para detectar códigos legacy (string thrown) y normalizarlos.
  *
  * Mantiene compatibilidad con código viejo que hacía `throw new Error('UNAUTHENTICATED')`.
@@ -178,13 +202,17 @@ export function handleActionError(
 
   if (error instanceof Error) {
     // Errores de Supabase u otros servicios: mensaje corto + log detallado.
-    const msg = /unauthor/i.test(error.message)
-      ? DEFAULT_USER_MESSAGES.UNAUTHENTICATED
-      : /network|timeout|econnrefused/i.test(error.message)
-        ? DEFAULT_USER_MESSAGES.NETWORK
-        : DEFAULT_USER_MESSAGES.UNKNOWN;
+    const msg = error.message;
+    if (/unauthor/i.test(msg)) {
+      logError(context, error);
+      return { success: false, error: DEFAULT_USER_MESSAGES.UNAUTHENTICATED, code: 'UNAUTHENTICATED' };
+    }
+    if (/network|timeout|econnrefused/i.test(msg)) {
+      logError(context, error);
+      return { success: false, error: DEFAULT_USER_MESSAGES.NETWORK, code: 'NETWORK' };
+    }
     logError(context, error);
-    return { success: false, error: msg, code: 'UNKNOWN' };
+    return { success: false, error: DEFAULT_USER_MESSAGES.UNKNOWN, code: 'UNKNOWN' };
   }
 
   logError(context, error);

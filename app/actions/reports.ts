@@ -4,6 +4,7 @@ import { createClient } from '../../lib/supabase/server';
 import { supabaseAdmin } from '../../lib/supabase';
 import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday, getColombiaDayRange } from '../../lib/timezone';
+import { err, warnSilently } from '../../lib/errors';
 
 export interface FinancialReport {
   success: boolean;
@@ -31,11 +32,11 @@ export interface FinancialReport {
 export async function getFinancialReport(date?: string): Promise<FinancialReport> {
   try {
     const supabase = createClient();
-    
+
     // 1. Verificar Autenticación y Rol
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-        return { success: false, date: '', error: 'Sesión expirada o no autorizado.', summary: {} as any, kpis: {} as any };
+      throw err('UNAUTHENTICATED', 'no user in getFinancialReport');
     }
 
     const { data: profile } = await supabaseAdmin
@@ -46,17 +47,19 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
 
     // Prioridad al rol del perfil, luego metadata del auth, por último manager
     const userRole = profile?.role || user.app_metadata?.role || user.user_metadata?.role || 'manager';
-    
+
     // Usar fecha local de Colombia (UTC-5) para determinar "Hoy"
     const today = getColombiaToday();
-    
+
     const targetDate = date || today;
 
     // Solo 'owner' y 'technician' pueden ver días pasados.
     const canViewHistory = ['owner', 'technician'].includes(userRole.toLowerCase());
-    
+
     if (!canViewHistory && targetDate !== today) {
-      throw new Error(`Solo tienes permiso para ver el informe del día actual. (Rol detectado: ${userRole})`);
+      throw err('FORBIDDEN', 'cannot view past date', {
+        userMessage: `Solo tienes permiso para ver el informe del día actual. (Rol detectado: ${userRole})`,
+      });
     }
 
     // Obtener rangos del día en zona horaria de Colombia
@@ -97,7 +100,7 @@ export async function getFinancialReport(date?: string): Promise<FinancialReport
     const cardSales = otherSales?.filter(s => s.payment_method === 'CARD').reduce((sum, s) => sum + Number(s.paid_amount), 0) || 0;
     const transferSales = otherSales?.filter(s => s.payment_method === 'BANK_TRANSFER').reduce((sum, s) => sum + Number(s.paid_amount), 0) || 0;
     const creditSales = otherSales?.filter(s => s.payment_method === 'CREDIT').reduce((sum, s) => sum + Number(s.paid_amount), 0) || 0;
-    
+
     // 5. Cobros a Clientes en EFECTIVO (CASH)
     const { data: customerPayments } = await supabaseAdmin
       .from('customer_payments')
@@ -162,11 +165,12 @@ const totalCompletedSales = allSales?.reduce((sum, s) => sum + Number(s.total_wi
     };
 
   } catch (err: any) {
-    return { 
-      success: false, 
-      date: date || '', 
-      error: err.message,
-      summary: {} as any, kpis: {} as any 
+    warnSilently('getFinancialReport', err);
+    return {
+      success: false,
+      date: date || '',
+      error: err?.message || 'Ocurrió un error generando el reporte.',
+      summary: {} as any, kpis: {} as any
     };
   }
 }

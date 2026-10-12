@@ -2,6 +2,7 @@
 
 import { getCurrentCompany } from '../../lib/company'
 import { getCurrentCompanyId as _getCurrentCompanyId } from '../../lib/supabase/company-context'
+import { handleActionError, isAppError } from '../../lib/errors'
 
 /**
  * Server action que devuelve los datos del tenant actual.
@@ -17,12 +18,19 @@ export async function getCurrentCompanyAction() {
 /**
  * Server action que devuelve solo el company_id del usuario actual.
  * Wrapper porque `getCurrentCompanyId` usa `cookies()` que es server-only.
+ *
+ * Errores de autenticación/contexto se silencian (devuelve null) porque
+ * la página de login no tiene company_id y debe renderizar de todas formas.
  */
 export async function getCurrentCompanyIdAction(): Promise<string | null> {
     try {
         return await _getCurrentCompanyId()
-    } catch {
-        return null
+    } catch (caught) {
+        if (isAppError(caught) && (caught.code === 'UNAUTHENTICATED' || caught.code === 'NO_COMPANY_CONTEXT')) {
+            return null;
+        }
+        handleActionError(caught, 'getCurrentCompanyIdAction');
+        return null;
     }
 }
 

@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../lib/supabase'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers'
+import { handleActionError, err, warnSilently } from '../../lib/errors'
 
 /**
  * Lista todos los usuarios del tenant actual.
@@ -20,10 +21,10 @@ export async function getUsers() {
             .eq('company_id', ctx.companyId)
             .order('created_at', { ascending: false })
 
-        if (error) throw error
-        return { success: true, data: profiles }
-    } catch (err: any) {
-        return { success: false, error: mapAuthError(err.message) }
+        if (error) throw err('EXTERNAL', `profiles.list: ${error.message}`, { cause: error })
+        return { success: true as const, data: profiles }
+    } catch (caught) {
+        return handleActionError(caught, 'getUsers')
     }
 }
 
@@ -62,12 +63,11 @@ export async function createUser(payload: {
 
         if (invError) {
             if (invError.code === '23505') {
-                return {
-                    success: false,
-                    error: 'Ya existe una invitación pendiente para este email.'
-                }
+                throw err('CONFLICT', 'invitations.unique violation', {
+                    userMessage: 'Ya existe una invitación pendiente para este email.',
+                })
             }
-            throw invError
+            throw err('EXTERNAL', `invitations.insert: ${invError.message}`, { cause: invError })
         }
 
         // Construir URL de invitación
@@ -76,12 +76,13 @@ export async function createUser(payload: {
 
         // TODO: enviar email con el link de invitación
         // await sendInvitationEmail(payload.email, inviteUrl)
+        // eslint-disable-next-line no-console
         console.log(`[createUser] Invitación creada para ${payload.email}: ${inviteUrl}`)
 
         revalidatePath('/')
-        return { success: true, invitation_url: inviteUrl }
-    } catch (err: any) {
-        return { success: false, error: mapAuthError(err.message) }
+        return { success: true as const, invitation_url: inviteUrl }
+    } catch (caught) {
+        return handleActionError(caught, 'createUser')
     }
 }
 
@@ -106,7 +107,9 @@ export async function updateUser(
             .maybeSingle()
 
         if (!targetProfile) {
-            return { success: false, error: 'Usuario no encontrado en este tenant.' }
+            throw err('NOT_FOUND', `user not in tenant: ${userId}`, {
+                userMessage: 'Usuario no encontrado en este tenant.',
+            })
         }
 
         // 2. Actualizar profile (full_name, role)
@@ -119,7 +122,7 @@ export async function updateUser(
                 .from('profiles')
                 .update(profileUpdates)
                 .eq('id', userId)
-            if (error) throw error
+            if (error) throw err('EXTERNAL', `profiles.update: ${error.message}`, { cause: error })
         }
 
         // 3. Actualizar auth.users (email, password, metadata)
@@ -136,12 +139,12 @@ export async function updateUser(
             userId,
             authUpdates
         )
-        if (authError) throw authError
+        if (authError) throw err('EXTERNAL', `auth.updateUserById: ${authError.message}`, { cause: authError })
 
         revalidatePath('/')
-        return { success: true }
-    } catch (err: any) {
-        return { success: false, error: mapAuthError(err.message) }
+        return { success: true as const }
+    } catch (caught) {
+        return handleActionError(caught, 'updateUser')
     }
 }
 
@@ -156,7 +159,9 @@ export async function deleteUser(userId: string) {
 
         // Prevenir auto-eliminación
         if (userId === ctx.user.id) {
-            return { success: false, error: 'No puedes eliminarte a ti mismo.' }
+            throw err('VALIDATION', 'cannot delete self', {
+                userMessage: 'No puedes eliminarte a ti mismo.',
+            })
         }
 
         // Validar que pertenece al tenant
@@ -168,16 +173,18 @@ export async function deleteUser(userId: string) {
             .maybeSingle()
 
         if (!targetProfile) {
-            return { success: false, error: 'Usuario no encontrado en este tenant.' }
+            throw err('NOT_FOUND', `user not in tenant: ${userId}`, {
+                userMessage: 'Usuario no encontrado en este tenant.',
+            })
         }
 
         const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
-        if (error) throw error
+        if (error) throw err('EXTERNAL', `auth.deleteUser: ${error.message}`, { cause: error })
 
         revalidatePath('/')
-        return { success: true }
-    } catch (err: any) {
-        return { success: false, error: mapAuthError(err.message) }
+        return { success: true as const }
+    } catch (caught) {
+        return handleActionError(caught, 'deleteUser')
     }
 }
 
@@ -188,6 +195,9 @@ export async function deleteUser(userId: string) {
  * y marca la invitación como usada.
  *
  * Esta acción NO requiere autenticación previa (es para usuarios nuevos).
+ *
+ * Devuelve `{ error: string }` (sin `success`) intencionalmente porque la página
+ * de aceptación no usa discriminated union; usa un try/catch con redirect.
  */
 export async function acceptInvitationAction(formData: FormData) {
     try {
@@ -203,7 +213,10 @@ export async function acceptInvitationAction(formData: FormData) {
         const { data: rpcData, error: rpcError } = await supabaseAdmin
             .rpc('accept_invitation', { p_token: token })
 
-        if (rpcError) throw rpcError
+        if (rpcError) {
+            warnSilently('acceptInvitationAction.accept_invitation', rpcError)
+            return { error: 'Invitación inválida o expirada.' }
+        }
         const invitation = rpcData as {
             success: boolean
             error?: string
@@ -228,8 +241,11 @@ export async function acceptInvitationAction(formData: FormData) {
             email_confirm: true,
         })
 
-        if (createError) throw createError
-        if (!data.user) throw new Error('No se pudo crear el usuario.')
+        if (createError) {
+            warnSilently('acceptInvitationAction.createUser', createError)
+            return { error: 'No se pudo crear el usuario. Intentá nuevamente.' }
+        }
+        if (!data.user) return { error: 'No se pudo crear el usuario.' }
 
         // 3. Marcar invitación como usada
         await supabaseAdmin
@@ -242,18 +258,7 @@ export async function acceptInvitationAction(formData: FormData) {
 
         return { success: true }
     } catch (err: any) {
-        console.error('[acceptInvitationAction]', err)
-        return { error: err.message || 'Error al aceptar la invitación.' }
+        warnSilently('acceptInvitationAction', err)
+        return { error: err?.message || 'Error al aceptar la invitación.' }
     }
-}
-
-/**
- * Mapea errores de auth-helpers a mensajes legibles.
- */
-function mapAuthError(message: string): string {
-    if (message === 'UNAUTHENTICATED') return 'No autenticado.'
-    if (message === 'NO_COMPANY_CONTEXT') return 'Usuario sin empresa asignada.'
-    if (message === 'NO_PROFILE') return 'Perfil de usuario no encontrado.'
-    if (message.startsWith('FORBIDDEN')) return message
-    return message
 }

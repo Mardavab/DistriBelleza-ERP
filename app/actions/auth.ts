@@ -3,6 +3,7 @@
 import { createClient } from '../../lib/supabase/server'
 import { supabaseAdmin } from '../../lib/supabase'
 import { redirect } from 'next/navigation'
+import { warnSilently } from '../../lib/errors'
 
 /**
  * Roles de plataforma: no pertenecen a ninguna empresa por diseño.
@@ -21,7 +22,7 @@ async function resolveRole(userId: string): Promise<string | null> {
         .maybeSingle()
 
     if (error) {
-        console.error('[auth] Error resolviendo rol:', error.message)
+        warnSilently('resolveRole', error);
         return null
     }
     return (data?.role as string) ?? null
@@ -48,6 +49,7 @@ export async function login(formData: FormData) {
     // Las cuentas de plataforma no están vinculadas a ninguna empresa.
     // Se les permite entrar directo a la consola, sin company_id.
     if (isPlatformAdmin) {
+        // eslint-disable-next-line no-console
         console.log(`[login] Acceso de plataforma: ${email} (${role})`)
         redirect('/')
     }
@@ -69,7 +71,7 @@ export async function login(formData: FormData) {
 
     if (companyError || !company) {
         await supabase.auth.signOut()
-        console.error(`[login] Empresa ${companyId} no encontrada:`, companyError?.message)
+        warnSilently('login.companyLookup', { companyId, error: companyError?.message });
         return {
             error: 'La empresa asociada a tu cuenta no existe. Contacta al administrador.'
         }
@@ -103,7 +105,7 @@ export async function getUserProfile() {
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-        console.warn('[getUserProfile] No user:', authError?.message)
+        warnSilently('getUserProfile.auth', authError);
         return null
     }
 
@@ -114,12 +116,13 @@ export async function getUserProfile() {
         .maybeSingle()
 
     if (profileError) {
-        console.error(`[getUserProfile] Error leyendo profile:`, profileError.message)
+        warnSilently('getUserProfile.profile', profileError);
         return null
     }
 
     if (!profile) {
-        console.warn(`[getUserProfile] Usuario ${user.id} no tiene fila en profiles`)
+        // eslint-disable-next-line no-console
+        console.warn(`[getUserProfile] Usuario ${user.id} no tiene fila en profiles`);
         return null
     }
 
@@ -135,7 +138,8 @@ export async function getUserProfile() {
         ?? (user.app_metadata?.company_id as string | undefined)
 
     if (!companyId) {
-        console.warn(`[getUserProfile] Usuario ${user.id} sin company_id en app_metadata`)
+        // eslint-disable-next-line no-console
+        console.warn(`[getUserProfile] Usuario ${user.id} sin company_id en app_metadata`);
         return null
     }
 

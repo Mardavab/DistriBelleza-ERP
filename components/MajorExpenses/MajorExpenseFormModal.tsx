@@ -5,6 +5,7 @@ import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../
 import CustomSelect from '../UI/CustomSelect';
 import { parseCurrencyInput } from '../../lib/format';
 import { addMajorExpense } from '../../app/actions/major_expenses';
+import { isFailure } from '../../lib/errors';
 import type { MajorExpenseCategory } from './categories';
 
 interface Props {
@@ -37,7 +38,7 @@ export default function MajorExpenseFormModal({ onClose, onSaved }: Props) {
             if (res.success) {
                 await onSaved();
                 onClose();
-            } else {
+            } else if (isFailure(res)) {
                 setError(res.error || 'No se pudo registrar el gasto');
             }
         } catch (err: any) {

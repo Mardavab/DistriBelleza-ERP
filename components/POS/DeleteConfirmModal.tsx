@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { deleteSale } from '../../app/actions/sales_history';
+import { isFailure } from '../../lib/errors';
 
 /**
  * Modal de confirmación para eliminar una venta.
@@ -30,7 +31,7 @@ export default function DeleteConfirmModal({ saleId, onClose, onDeleted, onError
 
         if (res.success) {
             onDeleted();
-        } else {
+        } else if (isFailure(res)) {
             onError("Error al eliminar venta: " + (res.error || ''));
         }
     };

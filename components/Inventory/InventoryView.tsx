@@ -16,6 +16,7 @@ import {
 } from '../../app/actions/inventory_actions';
 import CustomSelect from '../UI/CustomSelect';
 import { parseCurrencyInput, formatCurrencyInput, formatCurrency } from '../../lib/format';
+import { isFailure } from '../../lib/errors';
 
 // SKELETON COMPONENT
 const SkeletonRow = () => (
@@ -127,7 +128,7 @@ export default function InventoryView() {
       setProductForm({ ...productForm, category_id: res.data.id });
       setNewCatName('');
       setShowCatInput(false);
-    } else {
+    } else if (isFailure(res)) {
       setFormError("Error al crear categoría: " + res.error);
     }
   };
@@ -170,7 +171,7 @@ export default function InventoryView() {
       const res = await deleteProduct(productId);
       if (res.success) {
         loadData(true);
-      } else {
+      } else if (isFailure(res)) {
         alert("Error al eliminar: " + res.error);
       }
     }

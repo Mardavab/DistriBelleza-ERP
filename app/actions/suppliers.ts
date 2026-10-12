@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { handleActionError, err, warnSilently } from '../../lib/errors';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -57,15 +58,15 @@ async function uploadInvoiceFile(file: File | null, prefix: string): Promise<str
         upsert: false
       });
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `storage.upload: ${error.message}`, { cause: error });
 
     const { data: publicUrlData } = supabaseAdmin.storage
       .from('proveedores_archivos')
       .getPublicUrl(fileName);
 
     return publicUrlData.publicUrl;
-  } catch (error) {
-    console.error('Error uploading file:', error);
+  } catch (caught) {
+    warnSilently('uploadInvoiceFile', caught);
     return null;
   }
 }
@@ -84,17 +85,10 @@ export async function getSuppliers(): Promise<{ success: boolean; data?: Supplie
       .eq('company_id', companyId)
       .order('name', { ascending: true });
 
-    if (error) throw error;
-    return { success: true, data: data || [] };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error fetching suppliers:', error);
-    return { success: false, error: error.message };
+    if (error) throw err('EXTERNAL', `suppliers.list: ${error.message}`, { cause: error });
+    return { success: true as const, data: data || [] };
+  } catch (caught) {
+    return handleActionError(caught, 'getSuppliers');
   }
 }
 
@@ -106,7 +100,9 @@ export async function createSupplier(payload: {
 }): Promise<{ success: boolean; data?: Supplier; error?: string }> {
   try {
     if (!payload.name?.trim()) {
-      return { success: false, error: 'El nombre del proveedor es obligatorio.' };
+      throw err('VALIDATION', 'supplier name missing', {
+        userMessage: 'El nombre del proveedor es obligatorio.',
+      });
     }
 
     const companyId = await getCurrentCompanyId();
@@ -124,18 +120,11 @@ export async function createSupplier(payload: {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `suppliers.insert: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true, data };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error creating supplier:', error);
-    return { success: false, error: error.message };
+    return { success: true as const, data };
+  } catch (caught) {
+    return handleActionError(caught, 'createSupplier');
   }
 }
 
@@ -158,18 +147,11 @@ export async function updateSupplier(
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `suppliers.update: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error updating supplier:', error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'updateSupplier');
   }
 }
 
@@ -183,18 +165,11 @@ export async function deleteSupplier(id: string): Promise<{ success: boolean; er
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `suppliers.delete: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error deleting supplier:', error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'deleteSupplier');
   }
 }
 
@@ -218,23 +193,16 @@ export async function getSupplierInvoices(): Promise<{
       .eq('company_id', companyId)
       .order('due_date', { ascending: true });
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `supplier_invoices.list: ${error.message}`, { cause: error });
 
     const normalized = (data || []).map((inv: any) => ({
       ...inv,
       supplier_name: inv.suppliers?.name ?? '—',
     }));
 
-    return { success: true, data: normalized };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error fetching supplier invoices:', error);
-    return { success: false, error: error.message };
+    return { success: true as const, data: normalized };
+  } catch (caught) {
+    return handleActionError(caught, 'getSupplierInvoices');
   }
 }
 
@@ -250,10 +218,18 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
     const invoice_type = formData.get('invoice_type') as string;
     const invoice_file = formData.get('invoice_file') as File | null;
 
-    if (!supplier_id) return { success: false, error: 'Debes seleccionar un proveedor.' };
-    if (!issue_date) return { success: false, error: 'La fecha de expedición es obligatoria.' };
-    if (!due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
-    if (!amount || amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
+    if (!supplier_id) throw err('VALIDATION', 'supplier required', {
+      userMessage: 'Debes seleccionar un proveedor.',
+    });
+    if (!issue_date) throw err('VALIDATION', 'issue_date required', {
+      userMessage: 'La fecha de expedición es obligatoria.',
+    });
+    if (!due_date) throw err('VALIDATION', 'due_date required', {
+      userMessage: 'La fecha de vencimiento es obligatoria.',
+    });
+    if (!amount || amount <= 0) throw err('VALIDATION', 'amount must be > 0', {
+      userMessage: 'El valor debe ser mayor a cero.',
+    });
 
     const companyId = await getCurrentCompanyId();
 
@@ -280,18 +256,11 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `supplier_invoices.insert: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true, data };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error creating invoice:', error);
-    return { success: false, error: error.message };
+    return { success: true as const, data };
+  } catch (caught) {
+    return handleActionError(caught, 'createSupplierInvoice');
   }
 }
 
@@ -310,10 +279,18 @@ export async function updateSupplierInvoice(
     const invoice_type = formData.get('invoice_type') as string;
     const invoice_file = formData.get('invoice_file') as File | null;
 
-    if (!supplier_id) return { success: false, error: 'Debes seleccionar un proveedor.' };
-    if (!issue_date) return { success: false, error: 'La fecha de expedición es obligatoria.' };
-    if (!due_date) return { success: false, error: 'La fecha de vencimiento es obligatoria.' };
-    if (!amount || amount <= 0) return { success: false, error: 'El valor debe ser mayor a cero.' };
+    if (!supplier_id) throw err('VALIDATION', 'supplier required', {
+      userMessage: 'Debes seleccionar un proveedor.',
+    });
+    if (!issue_date) throw err('VALIDATION', 'issue_date required', {
+      userMessage: 'La fecha de expedición es obligatoria.',
+    });
+    if (!due_date) throw err('VALIDATION', 'due_date required', {
+      userMessage: 'La fecha de vencimiento es obligatoria.',
+    });
+    if (!amount || amount <= 0) throw err('VALIDATION', 'amount must be > 0', {
+      userMessage: 'El valor debe ser mayor a cero.',
+    });
 
     const companyId = await getCurrentCompanyId();
 
@@ -340,18 +317,11 @@ export async function updateSupplierInvoice(
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `supplier_invoices.update: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error updating invoice:', error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'updateSupplierInvoice');
   }
 }
 
@@ -368,17 +338,11 @@ export async function updateInvoiceStatus(
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `supplier_invoices.update(status): ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'updateInvoiceStatus');
   }
 }
 
@@ -392,18 +356,11 @@ export async function deleteSupplierInvoice(id: string): Promise<{ success: bool
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `supplier_invoices.delete: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error deleting invoice:', error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'deleteSupplierInvoice');
   }
 }
 
@@ -429,7 +386,9 @@ export async function markInvoiceAsPaid(
       .eq('company_id', companyId)
       .single();
 
-    if (fetchErr || !inv) throw fetchErr ?? new Error('Factura no encontrada.');
+    if (fetchErr || !inv) {
+      throw err('NOT_FOUND', `invoice not found: ${id}`, { cause: fetchErr });
+    }
 
     const updateData: any = {
       status: 'paid',
@@ -447,18 +406,11 @@ export async function markInvoiceAsPaid(
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `supplier_invoices.update(paid): ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error marking as paid:', error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'markInvoiceAsPaid');
   }
 }
 
@@ -468,7 +420,9 @@ export async function addInvoicePayment(
 ): Promise<{ success: boolean; newPaidAmount?: number; newStatus?: string; error?: string }> {
   try {
     if (!paymentAmount || paymentAmount <= 0) {
-      return { success: false, error: 'El valor del abono debe ser mayor a cero.' };
+      throw err('VALIDATION', 'payment must be > 0', {
+        userMessage: 'El valor del abono debe ser mayor a cero.',
+      });
     }
 
     const companyId = await getCurrentCompanyId();
@@ -480,19 +434,24 @@ export async function addInvoicePayment(
       .eq('company_id', companyId)
       .single();
 
-    if (fetchErr || !inv) throw fetchErr ?? new Error('Factura no encontrada.');
-    if (inv.status === 'paid') return { success: false, error: 'Esta factura ya está completamente pagada.' };
-    if (inv.status === 'cancelled') return { success: false, error: 'No se puede abonar a una factura cancelada.' };
+    if (fetchErr || !inv) {
+      throw err('NOT_FOUND', `invoice not found: ${id}`, { cause: fetchErr });
+    }
+    if (inv.status === 'paid') throw err('CONFLICT', 'invoice already paid', {
+      userMessage: 'Esta factura ya está completamente pagada.',
+    });
+    if (inv.status === 'cancelled') throw err('CONFLICT', 'invoice cancelled', {
+      userMessage: 'No se puede abonar a una factura cancelada.',
+    });
 
     const currentPaid = Number(inv.paid_amount ?? 0);
     const total = Number(inv.amount);
     const remaining = total - currentPaid;
 
     if (paymentAmount > remaining) {
-      return {
-        success: false,
-        error: `El abono (${paymentAmount.toLocaleString('es-CO')}) supera el saldo pendiente (${remaining.toLocaleString('es-CO')}).`,
-      };
+      throw err('VALIDATION', 'payment exceeds remaining', {
+        userMessage: `El abono (${paymentAmount.toLocaleString('es-CO')}) supera el saldo pendiente (${remaining.toLocaleString('es-CO')}).`,
+      });
     }
 
     const newPaidAmount = currentPaid + paymentAmount;
@@ -508,18 +467,11 @@ export async function addInvoicePayment(
       .eq('id', id)
       .eq('company_id', companyId);
 
-    if (updateErr) throw updateErr;
+    if (updateErr) throw err('EXTERNAL', `supplier_invoices.update(payment): ${updateErr.message}`, { cause: updateErr });
 
     revalidatePath('/');
-    return { success: true, newPaidAmount, newStatus };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error('Error adding invoice payment:', error);
-    return { success: false, error: error.message };
+    return { success: true as const, newPaidAmount, newStatus };
+  } catch (caught) {
+    return handleActionError(caught, 'addInvoicePayment');
   }
 }

@@ -5,6 +5,7 @@ import { Plus, Link2, Copy, Check, AlertCircle } from 'lucide-react';
 import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../UI/ModalBase';
 import { createCompany } from '../../app/actions/companies';
 import { slugify } from '../../lib/slug';
+import { isFailure } from '../../lib/errors';
 
 interface CompanyForm {
     legal_name: string;
@@ -79,7 +80,7 @@ export default function CreateCompanyModal({ onClose, onCreated }: CreateCompany
             });
             setForm(EMPTY_FORM);
             onCreated();
-        } else {
+        } else if (isFailure(res)) {
             setError(res.error ?? 'Error desconocido');
         }
     }

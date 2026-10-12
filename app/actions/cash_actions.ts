@@ -6,7 +6,7 @@ import { createClient } from '../../lib/supabase/server';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday } from '../../lib/timezone';
-import { handleActionError, err, warnSilently, type AppErrorCode } from '../../lib/errors';
+import { handleActionError, err, warnSilently, isSuccess, isFailure, type AppErrorCode } from '../../lib/errors';
 
 export type CashSessionWithTotals = {
   id: string;
@@ -23,26 +23,8 @@ export type ActionFailure = { success: false; error: string; code: AppErrorCode 
 export type ActionSuccess<T = unknown> = { success: true; data?: T };
 export type ActionResult<T = unknown> = ActionSuccess<T> | ActionFailure;
 
-/**
- * Helper para narrowing discriminante en componentes que reciben
- * `ActionResult`. Alternativa a `if (res.success)` cuando TS no logra
- * narrow por sí solo (típicamente cuando hay un `any` en el camino).
- *
- * ```ts
- * if (isSuccess(res)) {
- *   // res es ActionSuccess<T>, tiene .data
- * } else {
- *   // res es ActionFailure, tiene .error
- * }
- * ```
- */
-export function isSuccess<T>(res: ActionResult<T>): res is ActionSuccess<T> {
-  return res.success === true;
-}
-
-export function isFailure<T>(res: ActionResult<T>): res is ActionFailure {
-  return res.success === false;
-}
+// Re-export del helper genérico para narrowing discriminante en componentes.
+export { isSuccess, isFailure };
 
 export type GetActiveResult = CashSessionWithTotals | null;
 

@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../../lib/supabase';
 import { unstable_noStore as noStore, revalidatePath } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 import { getColombiaToday } from '../../lib/timezone';
+import { handleActionError, err } from '../../lib/errors';
 
 export async function getSalesHistory() {
   noStore();
@@ -34,14 +35,10 @@ export async function getSalesHistory() {
       .order('created_at', { ascending: false })
       .limit(200);
 
-    if (error) throw error;
-    return { success: true, data };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error fetching sales history:", error);
-    return { success: false, error: error.message };
+    if (error) throw err('EXTERNAL', `sales.list: ${error.message}`, { cause: error });
+    return { success: true as const, data };
+  } catch (caught) {
+    return handleActionError(caught, 'getSalesHistory');
   }
 }
 
@@ -54,18 +51,16 @@ export async function deleteSale(saleId: string) {
       p_sale_id: saleId
     });
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `tenant_delete_sale: ${error.message}`, { cause: error });
 
     const result = data as { success: boolean; error?: string };
-    if (!result.success) throw new Error(result.error);
+    if (!result.success) throw err('VALIDATION', `tenant_delete_sale: ${result.error ?? 'failed'}`, {
+      userMessage: result.error,
+    });
 
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error deleting sale:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'deleteSale');
   }
 }

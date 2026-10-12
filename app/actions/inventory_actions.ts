@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { handleActionError, warnSilently, isAppError, err } from '../../lib/errors';
 
 export async function getInventory() {
   try {
@@ -24,13 +25,14 @@ export async function getInventory() {
       .eq('company_id', companyId)
       .order('created_at', { ascending: false });
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `product_variants.list: ${error.message}`, { cause: error });
     return data || [];
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
+  } catch (caught) {
+    // Sin contexto de tenant es estado normal durante login; no logueamos.
+    if (isAppError(caught) && (caught.code === 'UNAUTHENTICATED' || caught.code === 'NO_COMPANY_CONTEXT')) {
       return [];
     }
-    console.error("Error fetching inventory:", error);
+    warnSilently('getInventory', caught);
     return [];
   }
 }
@@ -45,9 +47,10 @@ export async function getCategories() {
       .eq('company_id', companyId)
       .order('name');
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `categories.list: ${error.message}`, { cause: error });
     return data || [];
   } catch {
+    // Fallback para listar categorías globales cuando no hay tenant context.
     const { data } = await supabaseAdmin.from('categories').select('*').order('name');
     return data || [];
   }
@@ -70,7 +73,7 @@ export async function createProductWithVariants(productData: any, variants: any[
       .select()
       .single();
 
-    if (pError) throw pError;
+    if (pError) throw err('EXTERNAL', `products.insert: ${pError.message}`, { cause: pError });
 
     const variantsToInsert = variants.map(v => ({
       company_id: companyId,
@@ -88,7 +91,7 @@ export async function createProductWithVariants(productData: any, variants: any[
       .insert(variantsToInsert)
       .select();
 
-    if (vError) throw vError;
+    if (vError) throw err('EXTERNAL', `product_variants.insert: ${vError.message}`, { cause: vError });
 
     const movements = insertedVariants.map(v => ({
       company_id: companyId,
@@ -99,20 +102,14 @@ export async function createProductWithVariants(productData: any, variants: any[
     })).filter(m => m.quantity > 0);
 
     if (movements.length > 0) {
-      await supabaseAdmin.from('inventory_movements').insert(movements);
+      const { error: movError } = await supabaseAdmin.from('inventory_movements').insert(movements);
+      if (movError) throw err('EXTERNAL', `inventory_movements.insert: ${movError.message}`, { cause: movError });
     }
 
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error creating product:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'createProductWithVariants');
   }
 }
 
@@ -131,7 +128,7 @@ export async function updateProductWithVariants(productId: string, productData: 
       .eq('id', productId)
       .eq('company_id', companyId);
 
-    if (pError) throw pError;
+    if (pError) throw err('EXTERNAL', `products.update: ${pError.message}`, { cause: pError });
 
     const { data: currentVariants, error: cvError } = await supabaseAdmin
       .from('product_variants')
@@ -139,17 +136,18 @@ export async function updateProductWithVariants(productId: string, productData: 
       .eq('product_id', productId)
       .eq('company_id', companyId);
 
-    if (cvError) throw cvError;
+    if (cvError) throw err('EXTERNAL', `product_variants.list: ${cvError.message}`, { cause: cvError });
 
     const incomingIds = variants.filter(v => v.id).map(v => v.id);
     const variantsToDelete = currentVariants.filter(cv => !incomingIds.includes(cv.id)).map(cv => cv.id);
 
     if (variantsToDelete.length > 0) {
-      await supabaseAdmin
+      const { error: delError } = await supabaseAdmin
         .from('product_variants')
         .delete()
         .in('id', variantsToDelete)
         .eq('company_id', companyId);
+      if (delError) throw err('EXTERNAL', `product_variants.delete: ${delError.message}`, { cause: delError });
     }
 
     for (const v of variants) {
@@ -172,32 +170,26 @@ export async function updateProductWithVariants(productId: string, productData: 
         .select()
         .single();
 
-      if (uError) throw uError;
+      if (uError) throw err('EXTERNAL', `product_variants.upsert: ${uError.message}`, { cause: uError });
 
       const oldStock = currentV ? currentV.stock : 0;
       const diff = newStock - oldStock;
       if (diff !== 0) {
-        await supabaseAdmin.from('inventory_movements').insert({
+        const { error: movError } = await supabaseAdmin.from('inventory_movements').insert({
           company_id: companyId,
           product_id: productId,
           type: diff > 0 ? 'in' : 'out',
           quantity: Math.abs(diff),
           reason: currentV ? 'Ajuste manual de inventario' : 'Nueva variante añadida'
         });
+        if (movError) throw err('EXTERNAL', `inventory_movements.insert: ${movError.message}`, { cause: movError });
       }
     }
 
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error updating product:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'updateProductWithVariants');
   }
 }
 
@@ -211,19 +203,12 @@ export async function deleteProduct(productId: string) {
       .eq('id', productId)
       .eq('company_id', companyId);
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `products.delete: ${error.message}`, { cause: error });
 
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error deleting product:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'deleteProduct');
   }
 }
 
@@ -237,17 +222,10 @@ export async function createCategory(name: string, description?: string) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) throw err('EXTERNAL', `categories.insert: ${error.message}`, { cause: error });
     revalidatePath('/');
-    return { success: true, data };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED') {
-      return { success: false, error: 'No autenticado.' };
-    }
-    if (error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error creating category:", error);
-    return { success: false, error: error.message };
+    return { success: true as const, data };
+  } catch (caught) {
+    return handleActionError(caught, 'createCategory');
   }
 }

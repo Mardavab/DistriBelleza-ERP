@@ -270,6 +270,14 @@ export class EscPosBuilder {
     this.cut(0);
     return concat(this.chunks);
   }
+
+  /**
+   * Devuelve los bytes acumulados actualmente (sin resetear).
+   * Útil para tests; en producción usar build* methods.
+   */
+  peekBytes(): Uint8Array {
+    return concat(this.chunks);
+  }
 }
 
 function paymentLabel(method: string, transferType?: string): string {

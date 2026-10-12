@@ -7,6 +7,7 @@ import {
     Link2, Copy, Clock
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, deleteUser } from '../../app/actions/users';
+import { isFailure } from '../../lib/errors';
 import CustomSelect from './CustomSelect';
 
 interface UserManagementProps {
@@ -91,7 +92,7 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
             if (res.success) {
                 closeModal();
                 loadUsers();
-            } else {
+            } else if (isFailure(res)) {
                 setError(res.error);
                 setLoading(false);
             }
@@ -103,7 +104,7 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
                 setInvitationUrl(res.invitation_url || null);
                 setLoading(false);
                 // No cerramos el modal — mostramos el link para copiar.
-            } else {
+            } else if (isFailure(res)) {
                 setError(res.error);
                 setLoading(false);
             }
@@ -127,7 +128,7 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
             const res = await deleteUser(id);
             if (res.success) {
                 loadUsers();
-            } else {
+            } else if (isFailure(res)) {
                 alert("Error al eliminar: " + res.error);
             }
         }
