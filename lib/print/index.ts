@@ -88,10 +88,15 @@ class PrinterFacade {
   }
 
   /**
-   * Pide al usuario que seleccione un dispositivo. Intenta Web Serial primero
-   * (cubre CH340/CH341) y cae a Web USB si está disponible.
+   * Pide al usuario que seleccione un dispositivo.
    *
-   * Lanza el ÚLTIMO error si ambos fallan, con un mensaje agregado.
+   * Orden de intento:
+   *   1) Web USB primero: impresoras térmicas con USB nativo (Jaltech,
+   *      Epson, Star, etc.) suelen aparecer acá. Si Windows ya cargó un
+   *      driver que reclama la interfaz, este paso puede fallar con
+   *      "permiso denegado" y caemos al siguiente.
+   *   2) Web Serial: impresoras con puente USB-serial (CH340/CH341) que
+   *      aparecen como COMx. No se pelea con el driver de Windows.
    */
   async connect(): Promise<PrinterInfo> {
     if (!this.isSupported()) {
@@ -106,24 +111,7 @@ class PrinterFacade {
 
     const errors: PrintError[] = [];
 
-    // 1) Web Serial primero (cubre el caso más común: JAL58M con CH340).
-    if (this.serial.isSupported()) {
-      try {
-        const info = await this.serial.connect();
-        this.setStatus('ready', info, 'serial');
-        return info;
-      } catch (e) {
-        const err = e as PrintError;
-        errors.push(err);
-        if (err.code === 'unsupported') {
-          // no tiene sentido seguir
-          this.setStatus('denied');
-          throw err;
-        }
-      }
-    }
-
-    // 2) Web USB como fallback.
+    // 1) Web USB primero (caso típico: impresoras con USB nativo).
     if (this.usb.isSupported()) {
       try {
         const info = await this.usb.connect();
@@ -132,18 +120,38 @@ class PrinterFacade {
       } catch (e) {
         const err = e as PrintError;
         errors.push(err);
+        // Si el dispositivo no es compatible (CH340 o no-printer),
+        // seguimos a Web Serial.
+        if (err.code === 'unsupported-device' || err.code === 'unsupported') {
+          // continuar
+        } else {
+          // permission-denied o transfer-failed: también probamos serial
+        }
       }
     }
 
-    // Ambos fallaron.
+    // 2) Web Serial (CH340/CH341/PL2303).
+    if (this.serial.isSupported()) {
+      try {
+        const info = await this.serial.connect();
+        this.setStatus('ready', info, 'serial');
+        return info;
+      } catch (e) {
+        const err = e as PrintError;
+        errors.push(err);
+      }
+    }
+
+    // Ambos fallaron: reportamos el último error con un mensaje unificado.
     const last = errors[errors.length - 1];
     const bothFailed = errors.length === 2;
     if (last?.code === 'permission-denied' && bothFailed) {
       this.setStatus('denied');
       throw makeError(
         'permission-denied',
-        'No se pudo abrir ni el puerto serie ni el USB. ' +
-          'Verificá que la impresora esté enchufada, encendida, y que ningún otro programa la esté usando.',
+        'No se pudo abrir ni el USB ni el puerto serie. Esto casi siempre pasa cuando Windows ' +
+          'ya cargó un driver de la impresora que bloquea el acceso del navegador. ' +
+          'Ver guía al final del mensaje.',
       );
     }
     if (last?.code === 'unsupported') {
@@ -156,6 +164,17 @@ class PrinterFacade {
 
   async disconnect(): Promise<void> {
     await Promise.allSettled([this.serial.disconnect(), this.usb.disconnect()]);
+    this.transport = null;
+    this.setStatus('disconnected', { status: 'disconnected' });
+  }
+
+  /**
+   * Olvida todos los dispositivos授权ados por el navegador (USB + serie).
+   * Útil cuando un dispositivo previamente授权ado no se puede abrir
+   * por conflicto de drivers.
+   */
+  async forgetAll(): Promise<void> {
+    await Promise.allSettled([this.usb.forgetAll(), this.serial.forgetAll()]);
     this.transport = null;
     this.setStatus('disconnected', { status: 'disconnected' });
   }

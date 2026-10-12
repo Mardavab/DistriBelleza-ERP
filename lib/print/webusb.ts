@@ -71,9 +71,32 @@ export class WebUsbPrinter {
     try {
       await device.open();
     } catch (e) {
+      const name = (e as { name?: string })?.name ?? '';
+      // SecurityError en Windows = driver de la impresora ya tiene reclamado el
+      // dispositivo. Es la causa #1 cuando el dispositivo aparece en el picker
+      // pero no se puede abrir.
+      if (name === 'SecurityError') {
+        throw makeError(
+          'permission-denied',
+          'Windows está bloqueando el acceso a la impresora. ' +
+            'El driver de la impresora (suele ser Jaltech o genérico) ya tiene ' +
+            'reclamado el puerto USB. Soluciones: 1) desinstalar el driver de la ' +
+            'impresora desde "Administrador de dispositivos", 2) usar Zadig para ' +
+            'instalar el driver WinUSB sobre el dispositivo.',
+          e,
+        );
+      }
+      if (name === 'NotFoundError') {
+        throw makeError(
+          'device-lost',
+          'La impresora se desconectó mientras se configuraba. Reintentá.',
+          e,
+        );
+      }
       throw makeError(
         'permission-denied',
-        'El navegador no pudo abrir el dispositivo USB. Verificá que no esté siendo usada por otra aplicación.',
+        'El navegador no pudo abrir el dispositivo USB (' + (name || 'error') + '). ' +
+          'Verificá que no esté siendo usada por otra aplicación.',
         e,
       );
     }
@@ -146,6 +169,20 @@ export class WebUsbPrinter {
     } catch {
       // ignorar
     }
+  }
+
+  /**
+   * Olvida TODOS los dispositivos USB que el navegador tiene recordados
+   * para este origen. Útil cuando un dispositivo previamente授权ado
+   * no se puede abrir por conflicto de drivers.
+   */
+  async forgetAll(): Promise<void> {
+    if (!this.isSupported()) return;
+    const devices = await navigator.usb.getDevices();
+    for (const d of devices) {
+      try { await d.forget(); } catch { /* ignore */ }
+    }
+    await this.disconnect();
   }
 
   /**

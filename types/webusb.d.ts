@@ -22,6 +22,7 @@ declare global {
     claimInterface(interfaceNumber: number): Promise<void>;
     releaseInterface(interfaceNumber: number): Promise<void>;
     reset(): Promise<void>;
+    forget(): Promise<void>;
     transferIn(endpointNumber: number, length: number): Promise<USBInTransferResult>;
     transferOut(endpointNumber: number, data: BufferSource): Promise<USBOutTransferResult>;
   }

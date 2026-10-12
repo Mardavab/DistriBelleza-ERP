@@ -66,6 +66,15 @@ export default function PrintStatusBadge() {
     }
   }
 
+  async function handleReset() {
+    setBusy(true);
+    try {
+      await printer.forgetAll();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const transportLabel = transport === 'serial' ? 'Serie' : transport === 'usb' ? 'USB' : null;
 
   return (
@@ -94,6 +103,7 @@ export default function PrintStatusBadge() {
         .badge-warn button { background: #d97706; color: white; }
         .badge-bad { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
         .spin { animation: spin 1s linear infinite; }
+        .reset-link { font-size: 0.7rem; text-decoration: underline; opacity: 0.7; cursor: pointer; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .product-tip { font-weight: 500; opacity: 0.85; }
       `}</style>
@@ -114,6 +124,17 @@ export default function PrintStatusBadge() {
         <button onClick={handleConnect} disabled={busy} title="Conectar impresora">
           {busy ? '…' : 'Conectar'}
         </button>
+      )}
+
+      {(status === 'denied' || status === 'disconnected') && (
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); handleReset(); }}
+          title="Borrar dispositivos授权ados por Edge y empezar de cero"
+          className="reset-link"
+        >
+          Reset
+        </a>
       )}
     </div>
   );

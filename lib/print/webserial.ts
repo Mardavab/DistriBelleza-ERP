@@ -101,6 +101,12 @@ export class WebSerialPrinter {
     }
   }
 
+  async forgetAll(): Promise<void> {
+    // Serial API no expone forget(); el usuario debe limpiar permisos en
+    // edge://settings/content/serial. Acá solo cerramos el puerto actual.
+    await this.disconnect();
+  }
+
   async print(data: Uint8Array): Promise<void> {
     if (!this.port || !this.port.writable) {
       throw makeError('no-device', 'No hay impresora conectada.');

@@ -37,11 +37,12 @@ function describeError(err: PrintError): string {
     case 'unsupported':
       return 'Tu navegador no soporta impresión USB directa. Usá Chrome o Edge actualizado.';
     case 'permission-denied':
-      return 'No se autorizó la impresora. Hacé clic en "Conectar impresora" arriba y elegí tu JAL58M de la lista.';
+      return err.message ||
+        'No se autorizó la impresora. Tocá "Conectar" arriba y elegí tu impresora de la lista.';
     case 'unsupported-device':
       return err.message;
     case 'no-device':
-      return 'No hay impresora conectada. Conectá tu impresora por USB y tocá "Conectar impresora" arriba.';
+      return 'No hay impresora conectada. Conectá tu impresora por USB y tocá "Conectar" arriba.';
     case 'device-lost':
       return 'La impresora se desconectó. Verificá el cable USB y reintentá.';
     case 'transfer-failed':
