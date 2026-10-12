@@ -1,8 +1,8 @@
-'use client'
+'use client';
 
 import React, { useState } from 'react';
 import { Printer, CheckCircle, AlertTriangle, Loader2 } from 'lucide-react';
-import { PRINT_SERVICE_URL } from '../../lib/constants';
+import { printer, type PrintError } from '../../lib/print';
 
 export interface ReceiptData {
   saleId: string;
@@ -32,6 +32,25 @@ interface PrintReceiptProps {
 
 type PrintStatus = 'idle' | 'printing' | 'success' | 'error';
 
+function describeError(err: PrintError): string {
+  switch (err.code) {
+    case 'unsupported':
+      return 'Tu navegador no soporta impresión USB directa. Usá Chrome o Edge actualizado.';
+    case 'permission-denied':
+      return 'No se autorizó la impresora. Hacé clic en "Conectar impresora" arriba y elegí tu JAL58M de la lista.';
+    case 'unsupported-device':
+      return err.message;
+    case 'no-device':
+      return 'No hay impresora conectada. Conectá tu impresora por USB y tocá "Conectar impresora" arriba.';
+    case 'device-lost':
+      return 'La impresora se desconectó. Verificá el cable USB y reintentá.';
+    case 'transfer-failed':
+      return 'No se pudo comunicar con la impresora. Verificá que esté encendida, con papel y conectada por USB.';
+    default:
+      return err.message || 'Error desconocido al imprimir.';
+  }
+}
+
 export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
   const [status, setStatus] = useState<PrintStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
@@ -41,35 +60,33 @@ export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
     setErrorMsg('');
 
     try {
-      const response = await fetch(`${PRINT_SERVICE_URL}/print`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Print-Service-Token': process.env.NEXT_PUBLIC_PRINT_SERVICE_TOKEN || '',
-        },
-        body: JSON.stringify(saleData),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setStatus('success');
-        setTimeout(() => {
-          setStatus('idle');
-          onDone?.();
-        }, 2000);
-      } else {
-        setStatus('error');
-        setErrorMsg(result.error || 'Error al imprimir.');
+      if (!printer.isSupported()) {
+        throw {
+          code: 'unsupported',
+          message: 'Navegador no soporta WebUSB.',
+        } as PrintError;
       }
-    } catch {
+
+      // Si todavía no hay dispositivo autorizado, pedimos permiso.
+      if (printer.getStatus() !== 'ready') {
+        await printer.connect();
+      }
+
+      await printer.printReceipt(saleData);
+
+      setStatus('success');
+      setTimeout(() => {
+        setStatus('idle');
+        onDone?.();
+      }, 2000);
+    } catch (e) {
+      const err = e as PrintError;
       setStatus('error');
-      setErrorMsg(
-        'No se pudo conectar con el servicio de impresión. ' +
-        'Asegúrese de que print-service está corriendo (node server.js).'
-      );
+      setErrorMsg(describeError(err));
     }
   };
+
+  const ready = printer.getStatus() === 'ready';
 
   return (
     <div className="print-receipt-area">
@@ -85,12 +102,18 @@ export default function PrintReceipt({ saleData, onDone }: PrintReceiptProps) {
         .print-msg.success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
         .spinner { animation: spin 1s linear infinite; }
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .hint { font-size: 0.75rem; color: #6b7280; text-align: center; }
       `}</style>
 
       {status === 'idle' && (
-        <button className="btn-print" onClick={handlePrint}>
-          <Printer size={20} /> IMPRIMIR RECIBO
-        </button>
+        <>
+          <button className="btn-print" onClick={handlePrint}>
+            <Printer size={20} /> {ready ? 'IMPRIMIR RECIBO' : 'CONECTAR E IMPRIMIR'}
+          </button>
+          {!ready && printer.isSupported() && (
+            <div className="hint">Se te va a pedir permiso para usar la impresora USB.</div>
+          )}
+        </>
       )}
 
       {status === 'printing' && (

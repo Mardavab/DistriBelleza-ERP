@@ -17,7 +17,7 @@ import {
   closeCashSession,
 } from '../../app/actions/cash_actions';
 import { ReceiptData } from './PrintReceipt';
-import { PRINT_SERVICE_URL } from '../../lib/constants';
+import { printer } from '../../lib/print';
 import {
   CartItem,
   POSMode,
@@ -385,9 +385,13 @@ export default function POS() {
       await refreshSearchResults();
       router.refresh();
 
-      // Auto-open cash drawer for CASH payments
+      // Auto-open cash drawer for CASH payments (WebUSB, silencioso).
       if (paymentMethod === 'CASH') {
-        fetch(`${PRINT_SERVICE_URL}/open-drawer`, { method: 'POST' }).catch(() => {});
+        printer.openDrawer().catch(() => {
+          // El cajero puede no haber conectado la impresora aún;
+          // no bloqueamos la venta por esto. La apertura puede
+          // hacerse manual después si la impresora estaba apagada.
+        });
       }
     } else {
       setError(res.error || 'Error al procesar la venta');

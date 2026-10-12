@@ -2,7 +2,6 @@
 
 import { supabaseAdmin } from '../../lib/supabase'
 import { requirePlatformRole } from '../../lib/supabase/auth-helpers'
-import { PRINT_SERVICE_URL } from '../../lib/constants'
 
 /**
  * ACCIONES DE LA CONSOLA DE PLATAFORMA
@@ -101,56 +100,20 @@ export async function getSystemHealth(): Promise<{
         }
 
         // ---------------------------------------------------------
-        // 2) Print service (local, requiere token)
+        // 2) Impresión
         // ---------------------------------------------------------
-        try {
-            const token = process.env.PRINT_SERVICE_TOKEN
-            if (!token) {
-                checks.push({
-                    id: 'print-service',
-                    label: 'Servicio de impresión',
-                    status: 'error',
-                    detail: 'PRINT_SERVICE_TOKEN no está configurado en el servidor',
-                })
-            } else {
-                const res = await withTimeout(
-                    fetch(`${PRINT_SERVICE_URL}/status`, {
-                        headers: { 'X-Print-Service-Token': token },
-                        cache: 'no-store',
-                    }),
-                    4000
-                )
-
-                if (!res.ok) {
-                    checks.push({
-                        id: 'print-service',
-                        label: 'Servicio de impresión',
-                        status: 'error',
-                        detail: `Respondió ${res.status}`,
-                    })
-                } else {
-                    const data = await res.json()
-                    checks.push({
-                        id: 'print-service',
-                        label: 'Servicio de impresión',
-                        status: data.connected ? 'ok' : 'warn',
-                        detail: data.connected
-                            ? 'Impresora conectada'
-                            : 'Servicio activo, sin impresora conectada',
-                        meta: data.printerName ?? undefined,
-                    })
-                }
-            }
-        } catch (err: any) {
-            checks.push({
-                id: 'print-service',
-                label: 'Servicio de impresión',
-                status: 'error',
-                detail: err?.message === 'timeout 4000ms'
-                    ? 'Sin respuesta en 4 segundos (¿está corriendo el servicio?)'
-                    : 'No se pudo conectar con el servicio local',
-            })
-        }
+        // La impresión se hace vía WebUSB directamente desde el navegador
+        // del cajero contra la impresora USB local. No hay servicio central
+        // que monitorear: el estado de la impresora depende del hardware del
+        // cliente. Marcamos este check como informativo ("ok" siempre) para
+        // que la consola de plataforma no muestre falsos errores.
+        checks.push({
+            id: 'print-service',
+            label: 'Impresión (WebUSB local)',
+            status: 'ok',
+            detail: 'La impresión es local vía WebUSB (Chrome/Edge).',
+            meta: 'Compatible con impresoras térmicas ESC/POS nativas USB',
+        })
 
         // ---------------------------------------------------------
         // 3) Tenants

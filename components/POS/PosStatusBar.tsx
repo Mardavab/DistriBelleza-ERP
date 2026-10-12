@@ -3,6 +3,7 @@
 import React from 'react';
 import { Unlock, Lock, User as UserIcon, DollarSign, TrendingUp, History, LogOut } from 'lucide-react';
 import { formatCurrency } from '../../lib/format';
+import PrintStatusBadge from './PrintStatusBadge';
 
 interface ActiveSession {
     initial_fund: number;
@@ -76,6 +77,7 @@ export default function PosStatusBar({
                 </>
             )}
             <div className="status-actions">
+                <PrintStatusBadge />
                 <button className="btn-history-trigger" onClick={onLoadHistory} disabled={isLoading}>
                     <History size={16} /> Historial
                 </button>
