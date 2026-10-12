@@ -191,6 +191,129 @@ describe('ProductSearch', () => {
     expect(mockAddToCart).toHaveBeenCalledWith(result);
   });
 
+  it('auto-agrega al carrito cuando el SKU coincide exacto', async () => {
+    // Caso típico: el escáner de código de barras tipea el SKU completo
+    // y devuelve exactamente 1 producto cuyo SKU === searchTerm.
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const exactResult: SearchResult = {
+      variant_id: 'v1',
+      product_name: 'Shampoo Aloe',
+      product_brand: 'BrandX',
+      variant_name: '500ml',
+      sku: 'EXACT-SKU-001',
+      price: 12000,
+      stock: 10,
+    };
+
+    const { rerender } = render(
+      <ProductSearch
+        searchTerm=""
+        setSearchTerm={setSearchTerm}
+        searchResults={[]}
+        isSearching
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    // Simula que la búsqueda terminó con el SKU exacto como searchTerm.
+    rerender(
+      <ProductSearch
+        searchTerm="EXACT-SKU-001"
+        setSearchTerm={setSearchTerm}
+        searchResults={[exactResult]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onAddToCart).toHaveBeenCalledWith(exactResult);
+      expect(setSearchTerm).toHaveBeenCalledWith('');
+    });
+  });
+
+  it('NO auto-agrega si hay varios resultados aunque uno coincida', async () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const results: SearchResult[] = [
+      { variant_id: 'v1', product_name: 'A', product_brand: 'B', variant_name: 'X', sku: 'SHARED-001', price: 100, stock: 5 },
+      { variant_id: 'v2', product_name: 'C', product_brand: 'D', variant_name: 'Y', sku: 'SHARED-002', price: 200, stock: 3 },
+    ];
+
+    render(
+      <ProductSearch
+        searchTerm="SHARED-001"
+        setSearchTerm={setSearchTerm}
+        searchResults={results}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    // Dar tiempo al useEffect para correr.
+    await new Promise(r => setTimeout(r, 50));
+
+    expect(onAddToCart).not.toHaveBeenCalled();
+    expect(setSearchTerm).not.toHaveBeenCalledWith('');
+  });
+
+  it('NO auto-agrega si el SKU del resultado no coincide con searchTerm', async () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const result: SearchResult = {
+      variant_id: 'v1',
+      product_name: 'X',
+      product_brand: 'Y',
+      variant_name: 'Z',
+      sku: 'DIFFERENT-SKU',
+      price: 100,
+      stock: 5,
+    };
+
+    render(
+      <ProductSearch
+        searchTerm="WHAT-I-TYPED"
+        setSearchTerm={setSearchTerm}
+        searchResults={[result]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    await new Promise(r => setTimeout(r, 50));
+    expect(onAddToCart).not.toHaveBeenCalled();
+  });
+
+  it('Enter agrega el primer resultado y limpia', () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const result: SearchResult = {
+      variant_id: 'v1',
+      product_name: 'Shampoo',
+      product_brand: 'BrandX',
+      variant_name: '500ml',
+      sku: 'SH-001',
+      price: 12000,
+      stock: 10,
+    };
+
+    const { container } = render(
+      <ProductSearch
+        searchTerm="SH"
+        setSearchTerm={setSearchTerm}
+        searchResults={[result]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onAddToCart).toHaveBeenCalledWith(result);
+    expect(setSearchTerm).toHaveBeenCalledWith('');
+  });
+
   it('muestra mensaje vacío cuando no hay resultados', () => {
     const { container } = render(
       <ProductSearch

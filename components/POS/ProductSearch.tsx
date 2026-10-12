@@ -1,6 +1,6 @@
-'use client'
+'use client';
 
-import React, { RefObject } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { formatCurrency } from '../../lib/format';
 
@@ -14,24 +14,13 @@ export interface SearchResult {
     stock: number;
 }
 
-/**
- * Panel de búsqueda de productos del POS.
- *
- * Subcomponente del POS. Encargado de:
- * - Input de búsqueda (también para escanear código de barras)
- * - Lista de resultados
- * - Click en resultado agrega al carrito
- *
- * Props: searchTerm/setSearchTerm, searchResults, isSearching,
- * onAddToCart, ref del input (para focus).
- */
-interface ProductSearchProps {
+export interface ProductSearchProps {
     searchTerm: string;
     setSearchTerm: (v: string) => void;
     searchResults: SearchResult[];
     isSearching: boolean;
     disabled?: boolean;
-    inputRef?: RefObject<HTMLInputElement>;
+    inputRef?: React.RefObject<HTMLInputElement>;
     onAddToCart: (product: SearchResult) => void;
 }
 
@@ -47,11 +36,62 @@ function SkeletonRow() {
     );
 }
 
+/**
+ * Panel de búsqueda de productos del POS.
+ *
+ * Comportamiento esperado para escaneo de códigos:
+ * - El usuario escanea un código o lo tipea.
+ * - Si la búsqueda devuelve exactamente 1 resultado cuyo SKU coincide
+ *   con el término buscado, se agrega automáticamente al carrito y se
+ *   limpia el input (listo para el siguiente escaneo).
+ * - Si hay varios resultados, se muestra la lista y el usuario elige.
+ * - Enter también agrega el primer resultado y limpia.
+ */
 export default function ProductSearch({
     searchTerm, setSearchTerm,
     searchResults, isSearching,
     disabled, inputRef, onAddToCart,
 }: ProductSearchProps) {
+    // Ref para evitar auto-add duplicado en el mismo término.
+    const lastAutoAddedRef = useRef<string>('');
+
+    useEffect(() => {
+        if (isSearching || searchTerm.length < 2) {
+            lastAutoAddedRef.current = '';
+            return;
+        }
+        if (searchResults.length !== 1) return;
+        // Limpieza defensiva: el escáner suele inyectar Enter como caracter.
+        const normalized = searchTerm.replace(/[\r\n]+/g, '').trim();
+        if (!normalized) return;
+
+        const candidate = searchResults[0];
+        const skuMatch = candidate.sku === normalized;
+        // Permitimos también match por barcode si existe en el future.
+        // Por ahora solo SKU exacto para evitar falsos positivos al tipear.
+        if (!skuMatch) return;
+
+        // No re-agregar el mismo término múltiples veces.
+        if (lastAutoAddedRef.current === candidate.variant_id) return;
+
+        lastAutoAddedRef.current = candidate.variant_id;
+        onAddToCart(candidate);
+        setSearchTerm('');
+        // Re-focus para que el siguiente escaneo se registre directo.
+        inputRef?.current?.focus();
+    }, [searchResults, searchTerm, isSearching, onAddToCart, setSearchTerm, inputRef]);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter' && searchResults.length > 0 && !isSearching) {
+            // Enter agrega el primer resultado y limpia.
+            e.preventDefault();
+            onAddToCart(searchResults[0]);
+            setSearchTerm('');
+            lastAutoAddedRef.current = searchResults[0].variant_id;
+            inputRef?.current?.focus();
+        }
+    };
+
     return (
         <>
             <div className="search-section">
@@ -63,7 +103,10 @@ export default function ProductSearch({
                         className="search-input no-icon"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
+                        onKeyDown={handleKeyDown}
                         autoFocus
+                        autoComplete="off"
+                        spellCheck={false}
                     />
                 </div>
             </div>
@@ -82,7 +125,11 @@ export default function ProductSearch({
                             </div>
                         )}
                         {searchResults.map(p => (
-                            <div key={p.variant_id} className="product-row" onClick={() => onAddToCart(p)}>
+                            <div
+                                key={p.variant_id}
+                                className="product-row"
+                                onClick={() => onAddToCart(p)}
+                            >
                                 <span className="sku">{p.sku}</span>
                                 <div className="product-info">
                                     <span className="product-name">{p.product_name}</span>

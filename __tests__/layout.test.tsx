@@ -28,10 +28,19 @@ jest.mock('../lib/supabase', () => ({
 
 // Mock de next/navigation para evitar errores en server components importados.
 jest.mock('next/navigation', () => ({
-  cookies: () => ({
-    getAll: () => [],
-    get: () => undefined,
-  }),
+    cookies: () => ({
+        getAll: () => [],
+        get: () => undefined,
+    }),
+    useRouter: () => ({
+        push: jest.fn(),
+        replace: jest.fn(),
+        refresh: jest.fn(),
+        back: jest.fn(),
+        forward: jest.fn(),
+        pathname: '/',
+    }),
+    usePathname: () => '/',
 }));
 
 import RootLayout from '../app/layout';
