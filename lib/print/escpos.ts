@@ -247,8 +247,9 @@ export class EscPosBuilder {
     if (footer) {
       this.line(separator('-', w), w);
       this.line(footer, w);
+    } else {
+      this.line('¡Gracias por su compra!', w);
     }
-    this.line('¡Gracias por su compra!', w);
 
     this.feed(3);
 

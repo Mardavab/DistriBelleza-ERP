@@ -85,7 +85,7 @@ export function buildReceiptHtml(data: ReceiptData): string {
     ? `<div class="center bold big">${escapeHtml(data.branding.header)}</div>`
     : '';
 
-  const footer = data.branding?.footer
+  const footer = data.branding?.footer?.trim()
     ? `<div class="separator"></div>
        <div class="center">${escapeHtml(data.branding.footer)}</div>`
     : '';
@@ -111,15 +111,23 @@ export function buildReceiptHtml(data: ReceiptData): string {
   }
   .receipt {
     width: ${PRINT_WIDTH_PX}px;
-    padding: 4mm 4mm;
+    padding: 2mm 2mm;
     box-sizing: border-box;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
   }
   .center { text-align: center; }
   .bold { font-weight: bold; }
-  .big { font-size: 13pt; }
+  .big {
+    font-size: 11pt;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
+  }
   .line {
-    white-space: pre;
-    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-wrap: break-word;
     margin: 1px 0;
   }
   .two-col {
@@ -167,8 +175,7 @@ export function buildReceiptHtml(data: ReceiptData): string {
     <div>Pago: ${escapeHtml(paymentLabel(data.paymentMethod, data.transferType))}</div>
     ${cashSection}
     <div class="separator"></div>
-    ${footer}
-    <div class="center">¡Gracias por su compra!</div>
+    ${footer || '<div class="center">¡Gracias por su compra!</div>'}
   </div>
 </body>
 </html>`;
@@ -212,34 +219,33 @@ export function printViaDialog(data: ReceiptData): Promise<{ printed: boolean }>
       doc.write(html);
       doc.close();
 
-      iframe.onload = () => {
+      const triggerPrint = () => {
         try {
           const win = iframe.contentWindow;
           if (!win) throw new Error('No se pudo acceder al iframe de impresión.');
 
-          let printed = false;
-          win.addEventListener('afterprint', () => {
-            printed = true;
+          let finished = false;
+          const done = (printed: boolean) => {
+            if (finished) return;
+            finished = true;
             cleanup();
             resolve({ printed });
-          });
+          };
+
+          win.addEventListener('afterprint', () => done(true));
 
           win.focus();
           win.print();
 
-          // Fallback: si el navegador no soporta afterprint, resolvemos después
-          // de un timeout razonable para no quedar colgados.
-          setTimeout(() => {
-            if (!printed) {
-              cleanup();
-              resolve({ printed: false });
-            }
-          }, 1500);
+          // Fallback tras cerrar o confirmar diálogo
+          setTimeout(() => done(false), 3000);
         } catch (e) {
           cleanup();
           reject(e);
         }
       };
+
+      setTimeout(triggerPrint, 250);
     } catch (e) {
       reject(e);
     }
