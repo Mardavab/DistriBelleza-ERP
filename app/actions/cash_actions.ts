@@ -6,8 +6,71 @@ import { createClient } from '../../lib/supabase/server';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday } from '../../lib/timezone';
+import { handleActionError, err, warnSilently, type AppErrorCode } from '../../lib/errors';
 
-export async function getActiveCashSession() {
+export type CashSessionWithTotals = {
+  id: string;
+  company_id: string;
+  user_id: string;
+  initial_fund: number;
+  status: 'open' | 'closed';
+  opening_time: string;
+  closing_time: string | null;
+  totalSold: number;
+};
+
+export type ActionFailure = { success: false; error: string; code: AppErrorCode };
+export type ActionSuccess<T = unknown> = { success: true; data?: T };
+export type ActionResult<T = unknown> = ActionSuccess<T> | ActionFailure;
+
+/**
+ * Helper para narrowing discriminante en componentes que reciben
+ * `ActionResult`. Alternativa a `if (res.success)` cuando TS no logra
+ * narrow por sí solo (típicamente cuando hay un `any` en el camino).
+ *
+ * ```ts
+ * if (isSuccess(res)) {
+ *   // res es ActionSuccess<T>, tiene .data
+ * } else {
+ *   // res es ActionFailure, tiene .error
+ * }
+ * ```
+ */
+export function isSuccess<T>(res: ActionResult<T>): res is ActionSuccess<T> {
+  return res.success === true;
+}
+
+export function isFailure<T>(res: ActionResult<T>): res is ActionFailure {
+  return res.success === false;
+}
+
+export type GetActiveResult = CashSessionWithTotals | null;
+
+export type OpenCashResult =
+  | { success: true; data: any }
+  | ActionFailure;
+
+export type GetSummaryResult =
+  | {
+      success: true;
+      summary: {
+        totalSales: number;
+        totalAmount: number;
+        cashSales: number;
+        otherSales: number;
+        totalExpenses: number;
+        cashExpenses: number;
+        expenseCount: number;
+        commissionEarned: number;
+        isCommissionEligible: boolean;
+      };
+    }
+  | ActionFailure;
+
+export type CloseCashResult = { success: true } | ActionFailure;
+export type AddExpenseResult = { success: true } | ActionFailure;
+
+export async function getActiveCashSession(): Promise<GetActiveResult> {
   noStore();
   try {
     const companyId = await getCurrentCompanyId();
@@ -20,7 +83,7 @@ export async function getActiveCashSession() {
       .maybeSingle();
 
     if (error) {
-      console.error("Error fetching cash session:", error);
+      warnSilently('getActiveCashSession:fetch', error);
       return null;
     }
 
@@ -30,6 +93,7 @@ export async function getActiveCashSession() {
     const startOfDayUTC = new Date(todayColombiaISO + 'T05:00:00.000Z');
 
     if (new Date(data.opening_time) < startOfDayUTC) {
+      // eslint-disable-next-line no-console
       console.log(`Auto-cerrando sesión ${data.id} por ser de un día anterior.`);
       await supabaseAdmin
         .from('cash_sessions')
@@ -52,16 +116,18 @@ export async function getActiveCashSession() {
     const totalSold = salesData?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
 
     return { ...data, totalSold };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return null;
+  } catch (error) {
+    // Una sesión de caja no encontrada / sin sesión es estado normal del sistema,
+    // no un error. Otros errores sí se loguean.
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg !== 'UNAUTHENTICATED' && msg !== 'NO_COMPANY_CONTEXT') {
+      warnSilently('getActiveCashSession', error);
     }
-    console.error("Unexpected error fetching cash session:", error);
     return null;
   }
 }
 
-export async function openCashSession(initialFund: number) {
+export async function openCashSession(initialFund: number): Promise<OpenCashResult> {
   try {
     const supabase = createClient();
     const companyId = await getCurrentCompanyId();
@@ -73,10 +139,16 @@ export async function openCashSession(initialFund: number) {
       .eq('company_id', companyId)
       .maybeSingle();
 
-    if (openSession) return { success: false, error: 'Ya existe una sesión de caja abierta.' };
+    if (openSession) {
+      throw err('CONFLICT', 'Sesión de caja ya abierta', {
+        userMessage: 'Ya existe una sesión de caja abierta.',
+      });
+    }
 
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { success: false, error: 'No se encontró una sesión de usuario válida.' };
+    if (!user) {
+      throw err('UNAUTHENTICATED', 'No user in openCashSession');
+    }
 
     const { data, error } = await supabaseAdmin
       .from('cash_sessions')
@@ -90,20 +162,18 @@ export async function openCashSession(initialFund: number) {
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      throw err('EXTERNAL', `openCashSession:insert: ${error.message}`, { cause: error });
+    }
 
     revalidatePath('/');
-    return { success: true, data };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error opening cash session:", error);
-    return { success: false, error: error.message };
+    return { success: true as const, data };
+  } catch (caught) {
+    return handleActionError(caught, 'openCashSession');
   }
 }
 
-export async function getCashSessionSummary(sessionId: string) {
+export async function getCashSessionSummary(sessionId: string): Promise<GetSummaryResult> {
   noStore();
   try {
     const companyId = await getCurrentCompanyId();
@@ -115,7 +185,11 @@ export async function getCashSessionSummary(sessionId: string) {
       .eq('company_id', companyId)
       .single();
 
-    if (!session) throw new Error("No se encontró la sesión.");
+    if (!session) {
+      throw err('NOT_FOUND', `Cash session ${sessionId} not found`, {
+        userMessage: 'No se encontró la sesión.',
+      });
+    }
 
     const todayColombiaISO = getColombiaToday();
     const startOfDayUTC = new Date(todayColombiaISO + 'T05:00:00.000Z');
@@ -151,7 +225,7 @@ export async function getCashSessionSummary(sessionId: string) {
     const cashSales = sales?.filter(s => s.payment_method === 'CASH').reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
 
     return {
-      success: true,
+      success: true as const,
       summary: {
         totalSales: sales?.length || 0,
         totalAmount: totalCompletedSales,
@@ -164,15 +238,12 @@ export async function getCashSessionSummary(sessionId: string) {
         isCommissionEligible
       }
     };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    return { success: false, error: error.message };
+  } catch (caught) {
+    return handleActionError(caught, 'getCashSessionSummary');
   }
 }
 
-export async function closeCashSession(sessionId: string) {
+export async function closeCashSession(sessionId: string): Promise<CloseCashResult> {
   try {
     const companyId = await getCurrentCompanyId();
 
@@ -185,20 +256,18 @@ export async function closeCashSession(sessionId: string) {
       .eq('id', sessionId)
       .eq('company_id', companyId);
 
-    if (updateError) throw updateError;
+    if (updateError) {
+      throw err('EXTERNAL', `closeCashSession:update: ${updateError.message}`, { cause: updateError });
+    }
 
     revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error closing cash session:", error);
-    return { success: false, error: error.message };
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'closeCashSession');
   }
 }
 
-export async function addExpense(description: string, amount: number) {
+export async function addExpense(description: string, amount: number): Promise<AddExpenseResult> {
   try {
     const companyId = await getCurrentCompanyId();
 
@@ -211,14 +280,12 @@ export async function addExpense(description: string, amount: number) {
         method: 'CASH'
       });
 
-    if (error) throw error;
-    revalidatePath('/');
-    return { success: true };
-  } catch (error: any) {
-    if (error.message === 'UNAUTHENTICATED' || error.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
+    if (error) {
+      throw err('EXTERNAL', `addExpense:insert: ${error.message}`, { cause: error });
     }
-    console.error("Error adding expense:", error);
-    return { success: false, error: error.message };
+    revalidatePath('/');
+    return { success: true as const };
+  } catch (caught) {
+    return handleActionError(caught, 'addExpense');
   }
 }

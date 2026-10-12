@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Lock, User as UserIcon, Calendar, Clock } from 'lucide-react';
-import { openCashSession } from '../../app/actions/cash_actions';
+import { openCashSession, isFailure } from '../../app/actions/cash_actions';
 import { formatCurrencyInput, parseCurrencyInput } from '../../lib/format';
 
 /**
@@ -37,9 +37,9 @@ export default function OpenSessionModal({ userProfile, onOpened, onClose }: Ope
 
         setIsLoading(false);
 
-        if (result.success) {
+if (result.success) {
             onOpened();
-        } else {
+        } else if (isFailure(result)) {
             setError(result.error || 'Error al abrir caja.');
         }
     };

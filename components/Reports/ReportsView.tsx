@@ -6,6 +6,7 @@ import { getFinancialReport, FinancialReport } from '../../app/actions/reports';
 import { getPdfBrandingAction } from '../../app/actions/company';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { warnSilently } from '../../lib/errors';
 
 // SKELETON COMPONENTS
 const SkeletonBox = ({ width, height, margin }: { width: string, height: string, margin?: string }) => (
@@ -61,7 +62,7 @@ export default function ReportsView({ userProfile }: { userProfile?: any }) {
 
   useEffect(() => {
     loadReport();
-    getPdfBrandingAction().then(setBranding).catch(() => {});
+    getPdfBrandingAction().then(setBranding).catch((e) => warnSilently('loadReport.branding', e));
   }, [date]);
 
   const exportPDF = () => {

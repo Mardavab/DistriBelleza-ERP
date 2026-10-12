@@ -15,6 +15,7 @@ import {
   getActiveCashSession,
   getCashSessionSummary,
   closeCashSession,
+  isFailure,
 } from '../../app/actions/cash_actions';
 import { ReceiptData } from './PrintReceipt';
 import { printer } from '../../lib/print';
@@ -335,7 +336,7 @@ export default function POS() {
     if (res.success) {
       setSessionSummary(res.summary);
       setShowCloseModal(true);
-    } else {
+    } else if (isFailure(res)) {
       setError(res.error || "Error al obtener resumen");
     }
     setIsLoading(false);
@@ -361,7 +362,10 @@ export default function POS() {
     );
 
     if (res.success) {
-      setSuccessData(res);
+// Narrowing TS: tras `if (res.success)`, res es la rama success:true.
+// Como `setSuccessData` está tipado como any, TS pierde la pista; casteamos
+// explícito al miembro correcto del union discriminado.
+setSuccessData(res as Extract<typeof res, { success: true }>);
       if (res.receipt) {
         // companyId + branding se inyectan en runtime para el print service
         const currentCompanyId = await getCurrentCompanyIdAction();
@@ -394,7 +398,10 @@ export default function POS() {
         });
       }
     } else {
-      setError(res.error || 'Error al procesar la venta');
+      // res es ProcessPOSSaleResult con success:false — el cast permite
+      // acceder a `.error` aunque TS no logró narrow.
+      const failRes = res as Extract<typeof res, { success: false }>;
+      setError(failRes.error || 'Error al procesar la venta');
     }
     setIsLoading(false);
   };

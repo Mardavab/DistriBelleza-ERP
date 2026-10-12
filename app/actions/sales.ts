@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '../../lib/supabase/server';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { handleActionError, AppError, err } from '../../lib/errors';
 
 export interface POSItem {
   variant_id: string;
@@ -58,13 +59,38 @@ export async function getDefaultProducts(page: number = 1, pageSize: number = 20
   return { data: formattedData, count: count || 0 };
 }
 
+export type ProcessPOSSaleResult =
+  | {
+      success: true;
+      saleId: string;
+      paid: number;
+      message: string;
+      receipt: {
+        saleId: string;
+        createdAt: string;
+        cashier: string;
+        items: Array<{ productName: string; quantity: number; unitPrice: number; discount: number }>;
+        subtotal: number;
+        totalDiscount: number;
+        total: number;
+        paymentMethod: string;
+        transferType?: string;
+        cashReceived?: number;
+      };
+    }
+  | {
+      success: false;
+      error: string;
+      code: import('../../lib/errors').AppErrorCode;
+    };
+
 export async function processPOSSale(
   customerId: string | null,
   items: POSItem[],
   paymentMethod: 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'CREDIT',
   transferType: 'NEQUI' | 'DAVIPLATA' | 'BANCOLOMBIA' | 'OTHER' | 'QR' | null = null,
   totalDiscount: number = 0
-) {
+): Promise<ProcessPOSSaleResult> {
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -80,19 +106,32 @@ export async function processPOSSale(
     });
 
     if (error) {
+      // Errores específicos de la RPC con código legacy para no romper contratos.
       if (error.message.includes('No hay una sesión de caja abierta')) {
-        return { success: false, error: 'DEBE ABRIR CAJA ANTES DE VENDER.' };
+        throw new AppError(
+          'FORBIDDEN',
+          'No hay sesión de caja abierta',
+          { userMessage: 'DEBE ABRIR CAJA ANTES DE VENDER.' },
+        );
       }
-      return { success: false, error: error.message };
+      throw err('EXTERNAL', `tenant_process_sale: ${error.message}`, { cause: error });
     }
 
     const result = data as { success: boolean; error?: string; code?: string; sale_id?: string; paid?: number };
 
     if (!result.success) {
       if (result.error?.includes('CONFLICT_409')) {
-        return { success: false, error: 'Conflicto de stock.', isConflict: true };
+        throw new AppError(
+          'CONFLICT',
+          'Conflicto de stock',
+          { userMessage: 'Conflicto de stock.' },
+        );
       }
-      return { success: false, error: result.error };
+      throw new AppError(
+        'VALIDATION',
+        result.error ?? 'Venta rechazada por el servidor',
+        { userMessage: result.error ?? 'No se pudo registrar la venta.' },
+      );
     }
 
     const { data: profile } = await supabaseAdmin
@@ -122,7 +161,7 @@ export async function processPOSSale(
     }));
 
     return {
-      success: true,
+      success: true as const,
       saleId: result.sale_id,
       paid: result.paid,
       message: 'Venta exitosa.',
@@ -140,12 +179,8 @@ export async function processPOSSale(
       }
     };
 
-  } catch (err: any) {
-    if (err.message === 'UNAUTHENTICATED' || err.message === 'NO_COMPANY_CONTEXT') {
-      return { success: false, error: 'Usuario sin empresa asignada.' };
-    }
-    console.error("Error in processPOSSale:", err);
-    return { success: false, error: 'Error inesperado.' };
+  } catch (caught) {
+    return handleActionError(caught, 'processPOSSale');
   } finally {
     revalidatePath('/');
   }

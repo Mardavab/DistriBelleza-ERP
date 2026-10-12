@@ -17,6 +17,7 @@ import { getPdfBrandingAction } from '../../app/actions/company';
 import { formatCurrency, formatCurrencyInput, parseCurrencyInput, formatDate } from '../../lib/format';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { warnSilently } from '../../lib/errors';
 import './Suppliers.css';
 
 const isOverdue = (due: string, status: string) =>
@@ -504,7 +505,7 @@ function ReportModal({ invoices, onClose }: ReportModalProps) {
 
   // Cargar branding del tenant al montar el modal
   useEffect(() => {
-    getPdfBrandingAction().then((b) => setBranding({ header: b.header, footer: b.footer })).catch(() => {});
+    getPdfBrandingAction().then((b) => setBranding({ header: b.header, footer: b.footer })).catch((e) => warnSilently('loadInvoices.branding', e));
   }, []);
 
   const handleGeneratePDF = () => {
@@ -1070,7 +1071,7 @@ const [billedToOptions, setBilledToOptions] = useState<string[]>(['Norby', 'Marl
   useEffect(() => { loadSuppliers(); loadInvoices(); }, []);
 
   useEffect(() => {
-    getBilledToOptions().then(setBilledToOptions).catch(() => {});
+    getBilledToOptions().then(setBilledToOptions).catch((e) => warnSilently('loadInvoices.billedTo', e));
   }, []);
 
   // ── KPIs ──

@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { MinusCircle } from 'lucide-react';
-import { addExpense } from '../../app/actions/cash_actions';
+import { addExpense, isFailure } from '../../app/actions/cash_actions';
 import { formatCurrencyInput, parseCurrencyInput } from '../../lib/format';
 
 /**
@@ -34,7 +34,7 @@ export default function ExpenseForm({ hasActiveSession, onAdded, onError }: Expe
             // Limpiar form DESPUÉS de propagar al padre (que abrirá el modal)
             // El padre limpiará al cerrar el modal con "Nuevo gasto"
             onAdded({ description, amount: numericAmount });
-        } else {
+        } else if (isFailure(res)) {
             onError(res.error || 'Error al registrar gasto');
         }
     };
