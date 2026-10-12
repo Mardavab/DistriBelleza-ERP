@@ -233,12 +233,13 @@ describe('ProductSearch', () => {
     });
   });
 
-  it('NO auto-agrega si hay varios resultados aunque uno coincida', async () => {
+  it('NO auto-agrega si hay varios resultados y ninguno coincide exacto', async () => {
     const onAddToCart = jest.fn();
     const setSearchTerm = jest.fn();
+    // Ambos SKUs son distintos al searchTerm → no hay match exacto.
     const results: SearchResult[] = [
-      { variant_id: 'v1', product_name: 'A', product_brand: 'B', variant_name: 'X', sku: 'SHARED-001', price: 100, stock: 5 },
-      { variant_id: 'v2', product_name: 'C', product_brand: 'D', variant_name: 'Y', sku: 'SHARED-002', price: 200, stock: 3 },
+      { variant_id: 'v1', product_name: 'A', product_brand: 'B', variant_name: 'X', sku: 'OTHER-001', price: 100, stock: 5 },
+      { variant_id: 'v2', product_name: 'C', product_brand: 'D', variant_name: 'Y', sku: 'OTHER-002', price: 200, stock: 3 },
     ];
 
     render(
@@ -251,9 +252,9 @@ describe('ProductSearch', () => {
       />,
     );
 
-    // Dar tiempo al useEffect para correr.
     await new Promise(r => setTimeout(r, 50));
 
+    // Sin match exacto, no auto-add.
     expect(onAddToCart).not.toHaveBeenCalled();
     expect(setSearchTerm).not.toHaveBeenCalledWith('');
   });
@@ -312,6 +313,141 @@ describe('ProductSearch', () => {
 
     expect(onAddToCart).toHaveBeenCalledWith(result);
     expect(setSearchTerm).toHaveBeenCalledWith('');
+  });
+
+  /**
+   * Caso reportado por el usuario: dos productos con SKUs muy similares
+   * (7703819017773 vs 7703819017780). Sin el fix, el fuzzy match podía
+   * traer el equivocado. Con el fix, auto-add elige el match exacto aunque
+   * haya varios resultados.
+   */
+  it('auto-elegir el match EXACTO cuando hay SKUs similares', async () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+
+    // Simula el caso del usuario: dos productos con SKUs casi idénticos
+    // (EAN-13 con 2 dígitos consecutivos diferentes).
+    const wrongProduct: SearchResult = {
+      variant_id: 'v-wrong',
+      product_name: 'Shampoo Argan & Jalea Real',
+      product_brand: 'MAXYBELT',
+      variant_name: '400ml',
+      sku: '7703819017773',
+      barcode: '7703819017773',
+      price: 24000,
+      stock: 11,
+    };
+    const rightProduct: SearchResult = {
+      variant_id: 'v-right',
+      product_name: 'Shampoo Argan & Jalea Real',
+      product_brand: 'MAXYBELT',
+      variant_name: '950ml',
+      sku: '7703819017780',
+      barcode: '7703819017780',
+      price: 46000,
+      stock: 11,
+    };
+
+    const { rerender } = render(
+      <ProductSearch
+        searchTerm=""
+        setSearchTerm={setSearchTerm}
+        searchResults={[]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    // Simula que la búsqueda terminó con AMBOS productos (orden arbitrario).
+    rerender(
+      <ProductSearch
+        searchTerm="7703819017780"
+        setSearchTerm={setSearchTerm}
+        searchResults={[wrongProduct, rightProduct]} // orden "incorrecto" en el array
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    await waitFor(() => {
+      // Debe auto-agregar el producto cuyo SKU es 7780 (el escaneado),
+      // NO el primero del array.
+      expect(onAddToCart).toHaveBeenCalledWith(rightProduct);
+      expect(onAddToCart).not.toHaveBeenCalledWith(wrongProduct);
+      expect(setSearchTerm).toHaveBeenCalledWith('');
+    });
+  });
+
+  it('match por barcode exacto también funciona', async () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const productByBarcode: SearchResult = {
+      variant_id: 'v1',
+      product_name: 'Test',
+      product_brand: 'Brand',
+      variant_name: 'Unit',
+      sku: 'INTERNAL-SKU',
+      barcode: '7500000000001',
+      price: 100,
+      stock: 5,
+    };
+
+    render(
+      <ProductSearch
+        searchTerm="7500000000001"
+        setSearchTerm={setSearchTerm}
+        searchResults={[productByBarcode]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(onAddToCart).toHaveBeenCalledWith(productByBarcode);
+    });
+  });
+
+  it('NO auto-add si hay múltiples matches exactos (ambiguo)', async () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const result1: SearchResult = { variant_id: 'v1', product_name: 'A', product_brand: 'X', variant_name: '1', sku: 'DUP', barcode: 'DUP', price: 100, stock: 5 };
+    const result2: SearchResult = { variant_id: 'v2', product_name: 'B', product_brand: 'X', variant_name: '2', sku: 'DUP', barcode: 'DUP', price: 100, stock: 5 };
+
+    render(
+      <ProductSearch
+        searchTerm="DUP"
+        setSearchTerm={setSearchTerm}
+        searchResults={[result1, result2]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+
+    await new Promise(r => setTimeout(r, 50));
+    // Como hay DOS matches exactos, no auto-añadimos (sería ambiguo).
+    expect(onAddToCart).not.toHaveBeenCalled();
+  });
+
+  it('Enter con múltiples resultados elige el match EXACTO sobre el primero', () => {
+    const onAddToCart = jest.fn();
+    const setSearchTerm = jest.fn();
+    const first: SearchResult = { variant_id: 'v-first', product_name: 'First', product_brand: 'X', variant_name: '', sku: 'PARTIAL', price: 1, stock: 1 };
+    const exact: SearchResult = { variant_id: 'v-exact', product_name: 'Exact', product_brand: 'X', variant_name: '', sku: 'EXACT', price: 1, stock: 1 };
+
+    const { container } = render(
+      <ProductSearch
+        searchTerm="EXACT"
+        setSearchTerm={setSearchTerm}
+        searchResults={[first, exact]}
+        isSearching={false}
+        onAddToCart={onAddToCart}
+      />,
+    );
+    const input = container.querySelector('input') as HTMLInputElement;
+    fireEvent.keyDown(input, { key: 'Enter' });
+
+    expect(onAddToCart).toHaveBeenCalledWith(exact);
+    expect(onAddToCart).not.toHaveBeenCalledWith(first);
   });
 
   it('muestra mensaje vacío cuando no hay resultados', () => {

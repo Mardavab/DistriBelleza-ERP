@@ -13,7 +13,23 @@ export interface POSItem {
   discount: number;
 }
 
-export async function searchPOSProducts(query: string) {
+/**
+ * Resultado de búsqueda en inventario del POS.
+ * Incluye `barcode` (código de barras físico) además del SKU, ya que algunos
+ * productos tienen códigos distintos en cada campo.
+ */
+export interface POSSearchResult {
+  variant_id: string;
+  product_name: string;
+  product_brand: string;
+  variant_name: string;
+  sku: string;
+  barcode: string | null;
+  price: number;
+  stock: number;
+}
+
+export async function searchPOSProducts(query: string): Promise<POSSearchResult[]> {
   noStore();
   if (!query || query.length < 2) return [];
 
@@ -25,7 +41,7 @@ export async function searchPOSProducts(query: string) {
   });
 
   if (error) return [];
-  return data as any[];
+  return (data ?? []) as POSSearchResult[];
 }
 
 export async function getDefaultProducts(page: number = 1, pageSize: number = 200) {

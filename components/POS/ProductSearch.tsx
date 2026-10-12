@@ -10,6 +10,8 @@ export interface SearchResult {
     product_brand: string;
     variant_name: string;
     sku: string;
+    /** Código de barras físico del producto (opcional, puede ser null). */
+    barcode?: string | null;
     price: number;
     stock: number;
 }
@@ -37,15 +39,35 @@ function SkeletonRow() {
 }
 
 /**
+ * Encuentra el candidato ideal para auto-add dado el searchTerm.
+ *
+ * Reglas:
+ * 1. Si hay EXACTAMENTE UN resultado cuyo SKU o barcode coincide exacto
+ *    con el searchTerm, ese es el candidato (auto-add).
+ * 2. Si hay VARIOS resultados con match exacto (raro, no debería pasar
+ *    por las constraints UNIQUE), no auto-add para evitar ambigüedad.
+ * 3. Si NO hay match exacto, devuelve null (mostrar lista al usuario).
+ *
+ * Esto arregla el caso donde el scanner lee 7703819017780 pero el search
+ * fuzzy devuelve además 7703819017773 — elegimos el exacto, no el primero.
+ */
+function findExactMatch(results: SearchResult[], term: string): SearchResult | null {
+    const exact = results.filter(
+        (r) => r.sku === term || r.barcode === term,
+    );
+    if (exact.length === 1) return exact[0];
+    return null;
+}
+
+/**
  * Panel de búsqueda de productos del POS.
  *
  * Comportamiento esperado para escaneo de códigos:
  * - El usuario escanea un código o lo tipea.
- * - Si la búsqueda devuelve exactamente 1 resultado cuyo SKU coincide
- *   con el término buscado, se agrega automáticamente al carrito y se
- *   limpia el input (listo para el siguiente escaneo).
- * - Si hay varios resultados, se muestra la lista y el usuario elige.
- * - Enter también agrega el primer resultado y limpia.
+ * - Si hay exactamente un resultado con SKU o barcode EXACTO al searchTerm,
+ *   se agrega automáticamente al carrito y se limpia el input.
+ * - Si hay varios, se muestra la lista y el usuario elige.
+ * - Enter agrega el primer resultado y limpia.
  */
 export default function ProductSearch({
     searchTerm, setSearchTerm,
@@ -60,22 +82,20 @@ export default function ProductSearch({
             lastAutoAddedRef.current = '';
             return;
         }
-        if (searchResults.length !== 1) return;
+
         // Limpieza defensiva: el escáner suele inyectar Enter como caracter.
         const normalized = searchTerm.replace(/[\r\n]+/g, '').trim();
         if (!normalized) return;
 
-        const candidate = searchResults[0];
-        const skuMatch = candidate.sku === normalized;
-        // Permitimos también match por barcode si existe en el future.
-        // Por ahora solo SKU exacto para evitar falsos positivos al tipear.
-        if (!skuMatch) return;
+        // Buscar match EXACTO (sku o barcode) entre los resultados.
+        const exact = findExactMatch(searchResults, normalized);
+        if (!exact) return;
 
-        // No re-agregar el mismo término múltiples veces.
-        if (lastAutoAddedRef.current === candidate.variant_id) return;
+        // No re-agregar el mismo variant dos veces con el mismo término.
+        if (lastAutoAddedRef.current === exact.variant_id) return;
 
-        lastAutoAddedRef.current = candidate.variant_id;
-        onAddToCart(candidate);
+        lastAutoAddedRef.current = exact.variant_id;
+        onAddToCart(exact);
         setSearchTerm('');
         // Re-focus para que el siguiente escaneo se registre directo.
         inputRef?.current?.focus();
@@ -84,10 +104,14 @@ export default function ProductSearch({
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter' && searchResults.length > 0 && !isSearching) {
             // Enter agrega el primer resultado y limpia.
+            // Si hay match exacto, también priorizamoslo.
+            const normalized = searchTerm.replace(/[\r\n]+/g, '').trim();
+            const exact = findExactMatch(searchResults, normalized);
+            const target = exact ?? searchResults[0];
             e.preventDefault();
-            onAddToCart(searchResults[0]);
+            onAddToCart(target);
             setSearchTerm('');
-            lastAutoAddedRef.current = searchResults[0].variant_id;
+            lastAutoAddedRef.current = target.variant_id;
             inputRef?.current?.focus();
         }
     };
