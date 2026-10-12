@@ -91,3 +91,8 @@ print-service/config.json
 # ------------------------------------------------------------------------------
 Supabase/backups/
 Supabase/**/.temp/
+
+# Playwright
+test-results/
+playwright-report/
+.playwright/
