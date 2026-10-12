@@ -106,23 +106,26 @@ export function buildReceiptHtml(data: ReceiptData): string {
     background: white;
     color: black;
     font-family: 'Courier New', Courier, monospace;
-    font-size: 10pt;
-    line-height: 1.25;
+    font-size: 9pt;
+    line-height: 1.2;
   }
   .receipt {
     width: ${PRINT_WIDTH_PX}px;
-    padding: 2mm 2mm;
+    padding: 1mm 1mm;
     box-sizing: border-box;
     overflow-wrap: anywhere;
     word-wrap: break-word;
+    letter-spacing: -0.2px;
   }
   .center { text-align: center; }
   .bold { font-weight: bold; }
   .big {
-    font-size: 11pt;
-    line-height: 1.2;
+    font-size: 10pt;
+    font-weight: bold;
+    line-height: 1.15;
     overflow-wrap: anywhere;
     word-wrap: break-word;
+    letter-spacing: -0.3px;
   }
   .line {
     white-space: pre-wrap;
