@@ -166,7 +166,7 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
                         <Users size={48} color="#cbd5e1" />
                         <p>No hay usuarios registrados todavía.</p>
                         <p style={{ fontSize: '0.85rem' }}>
-                            Haz clic en "Nuevo Empleado" para enviar una invitación.
+                            Haz clic en {`"Nuevo Empleado"`} para enviar una invitación.
                         </p>
                     </div>
                 ) : (

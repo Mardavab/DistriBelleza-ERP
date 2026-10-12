@@ -53,7 +53,6 @@ export async function createCompany(payload: {
 
         // Intentar insertar con created_by; si la columna no existe,
         // hacer fallback sin ella.
-        let company: any
         const insertPayload: any = {
             slug: payload.slug,
             legal_name: payload.legal_name.trim(),
@@ -78,7 +77,7 @@ export async function createCompany(payload: {
             .single()
 
         if (companyError) throw companyError
-        company = createdCompany
+        const company: any = createdCompany
 
         const defaultSettings: Array<[string, string]> = [
             ['commission_threshold', '1800000'],

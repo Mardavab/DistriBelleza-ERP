@@ -212,7 +212,7 @@ export default function CreateCompanyModal({ onClose, onCreated }: CreateCompany
                         <div className="platform-success-box">
                             <Check size={24} className="platform-success-icon" />
                             <div>
-                                <strong>Empresa "{success.trade_name}" creada</strong>
+                                <strong>Empresa {`"${success.trade_name}"`} creada</strong>
                                 <p>
                                     La empresa se creó con su configuración inicial.
                                 </p>
