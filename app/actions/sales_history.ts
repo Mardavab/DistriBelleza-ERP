@@ -2,14 +2,18 @@
 
 import { supabaseAdmin } from '../../lib/supabase';
 import { unstable_noStore as noStore, revalidatePath } from 'next/cache';
-import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { requireBranchContext } from '../../lib/supabase/branch-context';
+import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { getColombiaToday } from '../../lib/timezone';
 import { handleActionError, err } from '../../lib/errors';
 
 export async function getSalesHistory() {
   noStore();
   try {
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): filtramos ventas de la SUCURSAL activa.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) return { success: true as const, data: [] };
 
     const todayColombiaISO = getColombiaToday();
     const startOfDayUTC = new Date(todayColombiaISO + 'T05:00:00.000Z');
@@ -22,6 +26,7 @@ export async function getSalesHistory() {
         total_with_discount,
         payment_method,
         status,
+        branch_id,
         profiles (full_name),
         sale_items (
           quantity,
@@ -31,6 +36,7 @@ export async function getSalesHistory() {
         )
       `)
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .gte('created_at', startOfDayUTC.toISOString())
       .order('created_at', { ascending: false })
       .limit(200);
@@ -44,10 +50,18 @@ export async function getSalesHistory() {
 
 export async function deleteSale(saleId: string) {
   try {
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): tenant_delete_sale ahora requiere p_branch_id.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) {
+      throw err('VALIDATION', 'Sucursal sin empresa asociada', {
+        userMessage: 'No se pudo determinar la empresa de la sucursal.',
+      });
+    }
 
     const { data, error } = await supabaseAdmin.rpc('tenant_delete_sale', {
       p_company_id: companyId,
+      p_branch_id: branchId,
       p_sale_id: saleId
     });
 

@@ -1,31 +1,23 @@
 import { createClient } from './server'
-
-const DEFAULT_TENANT_ID = '11111111-1111-1111-1111-111111111111'
+import { getActiveMembership, isPlatformUser } from './membership-queries'
 
 /**
- * Obtiene el company_id del usuario actualmente autenticado.
+ * Obtiene el company_id del tenant activo del usuario.
  *
- * Lee la sesión del usuario vía cookies (Supabase SSR) y luego su fila
- * en `profiles` para extraer el `company_id`.
+ * Orden de resolución (Fase 10.2):
+ *   1. La membresía cuyo company_id coincide con el JWT.
+ *   2. La membresía marcada como `is_default`.
+ *   3. La primera membresía del usuario.
  *
- * Si el profile no tiene company_id (usuario legacy), usa Distribelleza
- * como fallback. Esto evita romper la app por un side-effect del backfill
- * de Fase 2. El fallback es seguro porque solo aplica cuando no hay
- * tenant explícito.
- *
- * Uso típico:
- *   const companyId = await getCurrentCompanyId()
- *   await supabaseAdmin.from('suppliers').insert({ company_id: companyId, ... })
+ * Si el usuario no tiene membresías (caso típico: técnico de plataforma),
+ * se considera "sin contexto de empresa" y se devuelve null. La función NO
+ * aplica fallback a Distribelleza como en versiones anteriores: con membresías,
+ * un usuario o tiene empresa activa explícita o no.
  *
  * Errores que lanza:
  *   - 'UNAUTHENTICATED': no hay sesión de usuario activa.
- *
- * Esta función es el anticipo del `requireAuthContext()` completo de
- * Fase 4 (auth multi-tenant). Cuando implementemos Fase 4, esta función
- * será reemplazada por una que también valide role y rechace profiles
- * sin company_id explícito.
  */
-export async function getCurrentCompanyId(): Promise<string> {
+export async function getCurrentCompanyId(): Promise<string | null> {
     const supabase = createClient()
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -34,22 +26,15 @@ export async function getCurrentCompanyId(): Promise<string> {
         throw new Error('UNAUTHENTICATED')
     }
 
-    const { data: profile } = await supabase
-        .from('profiles')
-        .select('company_id')
-        .eq('id', user.id)
-        .maybeSingle()
-
-    // Fallback a Distribelleza si el profile no tiene company_id
-    // (caso legacy: usuario creado antes de Fase 2).
-    if (!profile?.company_id) {
-        console.warn(
-            `[getCurrentCompanyId] Usuario ${user.id} sin company_id en profile. Usando tenant por defecto.`
-        )
-        return DEFAULT_TENANT_ID
+    // Cuentas de plataforma: no tienen empresa.
+    if (await isPlatformUser(user.id)) {
+        return null
     }
 
-    return profile.company_id
+    const jwtCompanyId = user.app_metadata?.company_id as string | undefined
+    const membership = await getActiveMembership(user.id, jwtCompanyId)
+
+    return membership?.company_id ?? null
 }
 
 /**

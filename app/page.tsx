@@ -4,12 +4,14 @@ import React, { useState, useEffect } from 'react';
 import { LayoutDashboard } from 'lucide-react';
 import { getUserProfile } from './actions/auth';
 import { getCurrentCompanyAction } from './actions/company';
+import { createSupabaseBrowserClient } from '../lib/supabase/browser';
 import Sidebar, { BUSINESS_TABS } from '../components/Dashboard/Sidebar';
 import Dashboard from '../components/Dashboard/Dashboard';
 import POS from '../components/POS/POS';
 import InventoryView from '../components/Inventory/InventoryView';
 import ReportsView from '../components/Reports/ReportsView';
 import UserManagement from '../components/UI/UserManagement';
+import BranchManagement from '../components/Dashboard/BranchManagement';
 import CompaniesPanel from '../components/Platform/CompaniesPanel';
 import PlatformDashboard from '../components/Platform/PlatformDashboard';
 import SystemHealth from '../components/Platform/SystemHealth';
@@ -24,7 +26,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   const role = profile?.role || null;
-  const isPlatformAdmin = role === 'technician';
+  const isPlatformAdmin = profile?.is_platform_admin === true;
 
   useEffect(() => {
     async function load() {
@@ -34,10 +36,47 @@ export default function Home() {
           window.location.href = '/login';
           return;
         }
+
+        // FASE 11.7 (Commit 2 — fix selector de sucursal):
+        // si el server action detectó que el JWT del cliente estaba
+        // desincronizado (branch_id faltante o distinto del activo
+        // real), recargamos la página para que el próximo request
+        // traiga el JWT fresco con el claim correcto. Sin esto,
+        // Supabase no refresca el access token en cada request y
+        // el usuario quedaba con el JWT cacheado viejo.
+        //
+        // SIEMPRE llamamos `refreshSession()` cuando este flag es
+        // `true`, sin condicionar a `!p.active_branch_id`. Antes el
+        // guard sólo aplicaba al path defensivo de "JWT sin branch_id
+        // + 2+ sucursales", pero el servidor acaba de escribir el
+        // branch_id correcto en `auth.users` y necesitamos refrescar
+        // el access token del navegador para que el siguiente request
+        // traiga el claim actualizado. Sin el refresh, el reload
+        // continúa con el claim viejo y `branch_sync_needed` se
+        // mantiene en true → loop infinito de reloads.
+        //
+        // Esto cierra el bug que reportaba el usuario: "solo pude ver
+        // una distribelleza no la otra que tiene, debe actualizar la
+        // pagina porque no se muestra el cambio de inmediato".
+        //
+        // El reload es la PRIMERA acción tras detectar el flag: el
+        // segundo load() traerá el JWT ya sincronizado y
+        // `branch_sync_needed` será false.
+        if (p.branch_sync_needed && !p.is_platform_admin) {
+          try {
+            const supabase = createSupabaseBrowserClient();
+            await supabase.auth.refreshSession();
+          } catch (err) {
+            console.warn('[page] refreshSession failed:', err);
+          }
+          window.location.reload();
+          return;
+        }
+
         setProfile(p);
 
         // Una cuenta de plataforma no tiene empresa: se salta la consulta.
-        if (p.role === 'technician') {
+        if (p.is_platform_admin) {
           setActiveTab('platform');
           return;
         }
@@ -105,6 +144,8 @@ export default function Home() {
         return <ReportsView userProfile={profile} />;
       case 'major-expenses':
         return <MajorExpensesView />;
+      case 'branches':
+        return <BranchManagement currentUserRole={profile?.role || 'manager'} />;
       case 'config':
         return (profile?.role === 'owner')
           ? <UserManagement currentUserRole={profile?.role} />

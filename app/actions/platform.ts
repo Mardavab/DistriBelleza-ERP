@@ -144,10 +144,12 @@ export async function getSystemHealth(): Promise<{
         // ---------------------------------------------------------
         // 4) Usuarios de plataforma configurados
         // ---------------------------------------------------------
+        // FASE 10.5: detectar técnicos por `is_platform_admin` (no por
+        // `profiles.role`, que se elimina en 10.5).
         const { count: technicianCount } = await supabaseAdmin
             .from('profiles')
             .select('id', { count: 'exact', head: true })
-            .eq('role', 'technician')
+            .eq('is_platform_admin', true)
 
         checks.push({
             id: 'platform-admins',

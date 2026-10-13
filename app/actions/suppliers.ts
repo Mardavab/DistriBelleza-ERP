@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { handleActionError, err, warnSilently } from '../../lib/errors';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
@@ -183,6 +184,8 @@ export async function getSupplierInvoices(): Promise<{
   noStore();
   try {
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): supplier_invoices.branch_id es NOT NULL.
+    const { branchId } = await requireBranchContext();
 
     const { data, error } = await supabaseAdmin
       .from('supplier_invoices')
@@ -191,6 +194,7 @@ export async function getSupplierInvoices(): Promise<{
         suppliers ( name )
       `)
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .order('due_date', { ascending: true });
 
     if (error) throw err('EXTERNAL', `supplier_invoices.list: ${error.message}`, { cause: error });
@@ -232,6 +236,8 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
     });
 
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): supplier_invoices.branch_id es NOT NULL desde 11.3.
+    const { branchId } = await requireBranchContext();
 
     let invoice_file_url = null;
     if (invoice_file && invoice_file.size > 0) {
@@ -242,6 +248,7 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
       .from('supplier_invoices')
       .insert({
         company_id: companyId,
+        branch_id: branchId,
         supplier_id,
         invoice_number: invoice_number?.trim() || null,
         issue_date,
@@ -293,6 +300,8 @@ export async function updateSupplierInvoice(
     });
 
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): defense in depth — filtrar también por branch_id.
+    const { branchId } = await requireBranchContext();
 
     const updateData: any = {
       supplier_id,
@@ -315,7 +324,8 @@ export async function updateSupplierInvoice(
       .from('supplier_invoices')
       .update(updateData)
       .eq('id', id)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.update: ${error.message}`, { cause: error });
     revalidatePath('/');
@@ -331,12 +341,15 @@ export async function updateInvoiceStatus(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): filtrar también por branch_id.
+    const { branchId } = await requireBranchContext();
 
     const { error } = await supabaseAdmin
       .from('supplier_invoices')
       .update({ status, updated_at: new Date().toISOString() })
       .eq('id', id)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.update(status): ${error.message}`, { cause: error });
     revalidatePath('/');
@@ -349,12 +362,15 @@ export async function updateInvoiceStatus(
 export async function deleteSupplierInvoice(id: string): Promise<{ success: boolean; error?: string }> {
   try {
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): defense in depth — branch_id en el DELETE.
+    const { branchId } = await requireBranchContext();
 
     const { error } = await supabaseAdmin
       .from('supplier_invoices')
       .delete()
       .eq('id', id)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.delete: ${error.message}`, { cause: error });
     revalidatePath('/');
@@ -370,6 +386,8 @@ export async function markInvoiceAsPaid(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): filtrar también por branch_id (SELECT y UPDATE).
+    const { branchId } = await requireBranchContext();
     let receipt_file_url = null;
 
     if (formData) {
@@ -384,6 +402,7 @@ export async function markInvoiceAsPaid(
       .select('amount')
       .eq('id', id)
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .single();
 
     if (fetchErr || !inv) {
@@ -404,7 +423,8 @@ export async function markInvoiceAsPaid(
       .from('supplier_invoices')
       .update(updateData)
       .eq('id', id)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.update(paid): ${error.message}`, { cause: error });
     revalidatePath('/');
@@ -426,12 +446,15 @@ export async function addInvoicePayment(
     }
 
     const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): filtrar también por branch_id (SELECT y UPDATE).
+    const { branchId } = await requireBranchContext();
 
     const { data: inv, error: fetchErr } = await supabaseAdmin
       .from('supplier_invoices')
       .select('amount, paid_amount, status')
       .eq('id', id)
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .single();
 
     if (fetchErr || !inv) {
@@ -465,7 +488,8 @@ export async function addInvoicePayment(
         updated_at: new Date().toISOString(),
       })
       .eq('id', id)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId);
 
     if (updateErr) throw err('EXTERNAL', `supplier_invoices.update(payment): ${updateErr.message}`, { cause: updateErr });
 

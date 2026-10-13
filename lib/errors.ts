@@ -52,6 +52,7 @@
 export type AppErrorCode =
   | 'UNAUTHENTICATED'
   | 'NO_COMPANY_CONTEXT'
+  | 'NO_BRANCH_CONTEXT'
   | 'FORBIDDEN'
   | 'VALIDATION'
   | 'NOT_FOUND'
@@ -67,6 +68,7 @@ export type AppErrorCode =
 const DEFAULT_USER_MESSAGES: Record<AppErrorCode, string> = {
   UNAUTHENTICATED: 'Tu sesión expiró. Inicia sesión de nuevo.',
   NO_COMPANY_CONTEXT: 'No tenés una empresa asignada. Contactá al administrador.',
+  NO_BRANCH_CONTEXT: 'No tenés una sucursal activa. Pedile al owner que te asigne.',
   FORBIDDEN: 'No tenés permisos para realizar esta acción.',
   VALIDATION: 'Los datos ingresados no son válidos.',
   NOT_FOUND: 'No se encontró el recurso solicitado.',
@@ -149,6 +151,7 @@ function legacyCodeFromString(value: unknown): AppErrorCode | null {
   const known: AppErrorCode[] = [
     'UNAUTHENTICATED',
     'NO_COMPANY_CONTEXT',
+    'NO_BRANCH_CONTEXT',
     'FORBIDDEN',
     'VALIDATION',
     'NOT_FOUND',

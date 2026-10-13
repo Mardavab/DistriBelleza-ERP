@@ -3,7 +3,8 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '../../lib/supabase/server';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
-import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { requireBranchContext } from '../../lib/supabase/branch-context';
+import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { handleActionError, AppError, err } from '../../lib/errors';
 
 export interface POSItem {
@@ -36,11 +37,19 @@ export async function searchPOSProducts(query: string): Promise<POSSearchResult[
   const cleaned = (query ?? '').replace(/[\r\n]+/g, '').trim();
   if (!cleaned || cleaned.length < 2) return [];
 
-  const companyId = await getCurrentCompanyId();
+  // BLOQUE D (Fase 11): tenant_search_inventory requiere p_branch_id en la
+  // firma (las ventas siguen siendo por sucursal), pero el stock que devuelve
+  // es `product_variants.stock` (global de la empresa) — las sucursales
+  // comparten inventario. `requireBranchContext` garantiza que el usuario
+  // tiene una sucursal activa (para registrar ventas/caja).
+  const { branchId } = await requireBranchContext();
+  const companyId = await getCompanyIdForBranch(branchId);
+  if (!companyId) return [];
 
   const { data, error } = await supabaseAdmin.rpc('tenant_search_inventory', {
     p_company_id: companyId,
-    search_term: cleaned
+    p_branch_id: branchId,
+    search_term: cleaned,
   });
 
   if (error) return [];
@@ -49,11 +58,19 @@ export async function searchPOSProducts(query: string): Promise<POSSearchResult[
 
 export async function getDefaultProducts(page: number = 1, pageSize: number = 200) {
   noStore();
-  const companyId = await getCurrentCompanyId();
+  // BLOQUE D (Fase 11): las sucursales comparten inventario.
+  // Filtramos por `product_variants.stock > 0` (NO por `branch_stock`,
+  // que ya no existe). El stock es global de la empresa.
+  const { branchId } = await requireBranchContext();
+  const companyId = await getCompanyIdForBranch(branchId);
+  if (!companyId) return { data: [], count: 0 };
 
   const { data, error, count } = await supabaseAdmin
     .from('product_variants')
-    .select('id, sku, stock, price, name, updated_at, products!inner(name, brand, price_base)', { count: 'exact' })
+    .select(`
+      id, sku, price, name, stock, updated_at,
+      products!inner(name, brand, price_base)
+    `, { count: 'exact' })
     .eq('company_id', companyId)
     .gt('stock', 0)
     .order('updated_at', { ascending: false })
@@ -71,7 +88,7 @@ export async function getDefaultProducts(page: number = 1, pageSize: number = 20
     variant_name: v.name,
     sku: v.sku,
     price: v.price ?? v.products.price_base,
-    stock: v.stock,
+    stock: v.stock ?? 0,
     updated_at: v.updated_at
   }));
 
@@ -113,10 +130,22 @@ export async function processPOSSale(
   try {
     const supabase = await createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    const companyId = await getCurrentCompanyId();
+    // BLOQUE D (Fase 11): tenant_process_sale requiere p_branch_id
+    // (las ventas se insertan con branch_id en sales/sale_items/movements),
+    // pero el stock que valida y descuenta es `product_variants.stock`
+    // (global de la empresa) — las sucursales comparten inventario.
+    // `requireBranchContext` valida sesión + membrisía de sucursal.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) {
+      throw new AppError('VALIDATION', 'Sucursal sin empresa asociada', {
+        userMessage: 'No se pudo determinar la empresa de la sucursal.',
+      });
+    }
 
     const { data, error } = await supabaseAdmin.rpc('tenant_process_sale', {
       p_company_id: companyId,
+      p_branch_id: branchId,
       p_customer_id: customerId,
       p_items: items,
       p_payment_method: paymentMethod,

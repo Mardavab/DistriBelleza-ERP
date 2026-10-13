@@ -4,11 +4,13 @@ import React, { useState, useEffect } from 'react';
 import {
     Users, Plus, Trash2, Edit2, Shield, Mail,
     UserCircle, AlertCircle, Check, X, RefreshCcw,
-    Link2, Copy, Clock
+    Link2, Copy, Clock, Store
 } from 'lucide-react';
 import { getUsers, createUser, updateUser, deleteUser } from '../../app/actions/users';
-import { isFailure } from '../../lib/errors';
+import { listBranchesAction } from '../../app/actions/branches';
+import { isFailure, isSuccess } from '../../lib/errors';
 import CustomSelect from './CustomSelect';
+import type { Branch } from '../../lib/supabase/branches';
 
 interface UserManagementProps {
     currentUserRole: string;
@@ -19,6 +21,12 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
     const [loading, setLoading] = useState(true);
     const [showModal, setShowModal] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // FASE 11 (Bloque C — Commit 3): sucursales activas de la empresa.
+    // Se cargan una sola vez al abrir el modal de creación y se filtran
+    // por `active=true` para no ofrecer sucursales desactivadas.
+    const [activeBranches, setActiveBranches] = useState<Branch[]>([]);
+    const [branchesLoading, setBranchesLoading] = useState(false);
 
     // Estado para mostrar el link de invitación después de crear
     const [invitationUrl, setInvitationUrl] = useState<string | null>(null);
@@ -31,7 +39,8 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
     const [formData, setFormData] = useState({
         email: '',
         full_name: '',
-        role: 'manager'
+        role: 'manager',
+        branch_id: '',
     });
 
     useEffect(() => {
@@ -47,14 +56,26 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
         setLoading(false);
     }
 
-    const openCreateModal = () => {
+    async function loadActiveBranches() {
+        setBranchesLoading(true);
+        const res = await listBranchesAction();
+        if (isSuccess(res)) {
+            setActiveBranches((res.data ?? []).filter((b) => b.active));
+        }
+        setBranchesLoading(false);
+    }
+
+    const openCreateModal = async () => {
         setIsEditing(false);
         setEditingId(null);
-        setFormData({ email: '', full_name: '', role: 'manager' });
+        setFormData({ email: '', full_name: '', role: 'manager', branch_id: '' });
         setError(null);
         setInvitationUrl(null);
         setCopied(false);
         setShowModal(true);
+        // Cargar sucursales activas para el selector. No bloqueamos la
+        // apertura del modal: la lista puede llegar un instante después.
+        void loadActiveBranches();
     };
 
     const openEditModal = (user: any) => {
@@ -63,7 +84,8 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
         setFormData({
             email: '',
             full_name: user.full_name,
-            role: user.role
+            role: user.role,
+            branch_id: '',
         });
         setError(null);
         setInvitationUrl(null);
@@ -99,7 +121,18 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
         } else {
             // CREAR invitación (no usuario directo).
             // La action devuelve { success, invitation_url }.
-            const res = await createUser(formData);
+            //
+            // FASE 11 (Bloque C — Commit 3): pasamos `branch_id`
+            // (single) en vez de `branch_ids[]`. La action usa la
+            // sucursal para vincular al invitado al aceptar.
+            const payload = {
+                email: formData.email,
+                full_name: formData.full_name,
+                role: formData.role,
+                branch_id: formData.branch_id || null,
+            };
+
+            const res = await createUser(payload);
             if (res.success) {
                 setInvitationUrl(res.invitation_url || null);
                 setLoading(false);
@@ -271,6 +304,32 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
                                     />
                                 </div>
 
+                                {/* FASE 11 (Bloque C — Commit 3): selector de UNA
+                                    sucursal. Al aceptar la invitación, el invitado
+                                    queda asignado automáticamente a esta sucursal. */}
+                                <div className="form-group">
+                                    <CustomSelect
+                                        label="Sucursal"
+                                        value={formData.branch_id}
+                                        onChange={(val) => setFormData({ ...formData, branch_id: val })}
+                                        placeholder={
+                                                activeBranches.length === 0
+                                                    ? branchesLoading
+                                                        ? 'Cargando sucursales...'
+                                                        : 'Sin sucursales disponibles'
+                                                    : 'Selecciona una sucursal...'
+                                            }
+                                        options={activeBranches.map((b) => ({
+                                            value: b.id,
+                                            label: `${b.name}${b.is_main ? ' (Principal)' : ''}`,
+                                            icon: <Store size={14} />,
+                                        }))}
+                                    />
+                                    <small className="form-helper">
+                                        Si no elegís una, el invitado quedará asignado a la sucursal principal.
+                                    </small>
+                                </div>
+
                                 <div className="info-note">
                                     <Clock size={14} />
                                     <span>El empleado deberá completar su registro con el link que recibirás. Expira en 7 días.</span>
@@ -378,6 +437,7 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
                 .form-group label { font-size: 0.875rem; font-weight: 600; color: #475569; }
                 .form-group input { padding: 12px; border: 1px solid #e2e8f0; border-radius: 12px; outline: none; transition: border-color 0.2s; }
                 .form-group input:focus { border-color: #6366f1; }
+                .form-helper { font-size: 0.75rem; color: #94a3b8; margin-top: 2px; }
 
                 .link-box {
                     display: flex;

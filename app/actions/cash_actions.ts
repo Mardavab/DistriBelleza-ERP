@@ -3,7 +3,8 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { createClient } from '../../lib/supabase/server';
-import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { requireBranchContext } from '../../lib/supabase/branch-context';
+import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday } from '../../lib/timezone';
 import { handleActionError, err, warnSilently, isSuccess, isFailure, type AppErrorCode } from '../../lib/errors';
@@ -55,13 +56,17 @@ export type AddExpenseResult = { success: true } | ActionFailure;
 export async function getActiveCashSession(): Promise<GetActiveResult> {
   noStore();
   try {
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): cada sucursal tiene su propia sesión de caja.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) return null;
 
     const { data, error } = await supabaseAdmin
       .from('cash_sessions')
       .select('*')
       .eq('status', 'open')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .maybeSingle();
 
     if (error) {
@@ -93,6 +98,7 @@ export async function getActiveCashSession(): Promise<GetActiveResult> {
       .select('total_with_discount')
       .eq('status', 'completed')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .gte('created_at', filterStartTime);
 
     const totalSold = salesData?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
@@ -102,7 +108,7 @@ export async function getActiveCashSession(): Promise<GetActiveResult> {
     // Una sesión de caja no encontrada / sin sesión es estado normal del sistema,
     // no un error. Otros errores sí se loguean.
     const msg = error instanceof Error ? error.message : String(error);
-    if (msg !== 'UNAUTHENTICATED' && msg !== 'NO_COMPANY_CONTEXT') {
+    if (msg !== 'UNAUTHENTICATED' && msg !== 'NO_COMPANY_CONTEXT' && msg !== 'NO_BRANCH_CONTEXT') {
       warnSilently('getActiveCashSession', error);
     }
     return null;
@@ -112,18 +118,27 @@ export async function getActiveCashSession(): Promise<GetActiveResult> {
 export async function openCashSession(initialFund: number): Promise<OpenCashResult> {
   try {
     const supabase = createClient();
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): la sesión de caja es POR SUCURSAL. Rechaza si
+    // ya hay una abierta en la sucursal activa (no por empresa).
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) {
+      throw err('VALIDATION', 'Sucursal sin empresa asociada', {
+        userMessage: 'No se pudo determinar la empresa de la sucursal.',
+      });
+    }
 
     const { data: openSession } = await supabaseAdmin
       .from('cash_sessions')
       .select('id')
       .eq('status', 'open')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .maybeSingle();
 
     if (openSession) {
       throw err('CONFLICT', 'Sesión de caja ya abierta', {
-        userMessage: 'Ya existe una sesión de caja abierta.',
+        userMessage: 'Ya existe una sesión de caja abierta en esta sucursal.',
       });
     }
 
@@ -136,6 +151,7 @@ export async function openCashSession(initialFund: number): Promise<OpenCashResu
       .from('cash_sessions')
       .insert({
         company_id: companyId,
+        branch_id: branchId,
         user_id: user.id,
         initial_fund: initialFund,
         status: 'open',
@@ -158,13 +174,22 @@ export async function openCashSession(initialFund: number): Promise<OpenCashResu
 export async function getCashSessionSummary(sessionId: string): Promise<GetSummaryResult> {
   noStore();
   try {
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): la sesión es POR SUCURSAL. El resumen
+    // (ventas, gastos) se filtra por la sucursal de la sesión.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) {
+      throw err('VALIDATION', 'Sucursal sin empresa asociada', {
+        userMessage: 'No se pudo determinar la empresa de la sucursal.',
+      });
+    }
 
     const { data: session } = await supabaseAdmin
       .from('cash_sessions')
       .select('*')
       .eq('id', sessionId)
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .single();
 
     if (!session) {
@@ -185,12 +210,14 @@ export async function getCashSessionSummary(sessionId: string): Promise<GetSumma
       .select('total_with_discount, payment_method')
       .eq('status', 'completed')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .gte('created_at', filterStartTime);
 
     const { data: expenses } = await supabaseAdmin
       .from('expenses')
       .select('amount, method')
       .eq('company_id', companyId)
+      .eq('branch_id', branchId)
       .gte('created_at', filterStartTime);
 
     const totalCompletedSales = sales?.reduce((sum, s) => sum + Number(s.total_with_discount), 0) || 0;
@@ -224,10 +251,17 @@ export async function getCashSessionSummary(sessionId: string): Promise<GetSumma
     return handleActionError(caught, 'getCashSessionSummary');
   }
 }
-
 export async function closeCashSession(sessionId: string): Promise<CloseCashResult> {
   try {
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): la sesión es por sucursal. Validamos que la
+    // sesión a cerrar pertenece a la sucursal activa.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) {
+      throw err('VALIDATION', 'Sucursal sin empresa asociada', {
+        userMessage: 'No se pudo determinar la empresa de la sucursal.',
+      });
+    }
 
     const { error: updateError } = await supabaseAdmin
       .from('cash_sessions')
@@ -236,7 +270,8 @@ export async function closeCashSession(sessionId: string): Promise<CloseCashResu
         closing_time: new Date().toISOString()
       })
       .eq('id', sessionId)
-      .eq('company_id', companyId);
+      .eq('company_id', companyId)
+      .eq('branch_id', branchId);
 
     if (updateError) {
       throw err('EXTERNAL', `closeCashSession:update: ${updateError.message}`, { cause: updateError });
@@ -251,12 +286,20 @@ export async function closeCashSession(sessionId: string): Promise<CloseCashResu
 
 export async function addExpense(description: string, amount: number): Promise<AddExpenseResult> {
   try {
-    const companyId = await getCurrentCompanyId();
+    // FASE 11 (Bloque C): expenses.branch_id es NOT NULL.
+    const { branchId } = await requireBranchContext();
+    const companyId = await getCompanyIdForBranch(branchId);
+    if (!companyId) {
+      throw err('VALIDATION', 'Sucursal sin empresa asociada', {
+        userMessage: 'No se pudo determinar la empresa de la sucursal.',
+      });
+    }
 
     const { error } = await supabaseAdmin
       .from('expenses')
       .insert({
         company_id: companyId,
+        branch_id: branchId,
         description,
         amount,
         method: 'CASH'
@@ -265,6 +308,7 @@ export async function addExpense(description: string, amount: number): Promise<A
     if (error) {
       throw err('EXTERNAL', `addExpense:insert: ${error.message}`, { cause: error });
     }
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {

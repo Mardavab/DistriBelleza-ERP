@@ -1,0 +1,276 @@
+/**
+ * Tests para app/actions/platform.ts (Fase 10 — multi-empresa).
+ *
+ * Cubre el cambio de Fase 10.5 en `getSystemHealth`:
+ *   - El check "platform-admins" ahora cuenta usuarios con
+ *     `is_platform_admin = true` (NO `role = 'technician'`).
+ *
+ * Mocks: supabaseAdmin (de lib/supabase) + requirePlatformRole (de auth-helpers).
+ * NO se pega a la base real.
+ */
+
+const mockRequirePlatformRole = jest.fn()
+jest.mock('../../../lib/supabase/auth-helpers', () => ({
+    requirePlatformRole: (...args: unknown[]) => mockRequirePlatformRole(...args),
+}))
+
+const mockFrom = jest.fn()
+jest.mock('../../../lib/supabase', () => ({
+    supabaseAdmin: { from: mockFrom },
+}))
+
+// next/cache no se usa directamente en este archivo pero lo necesitamos
+// porque el archivo lo importa... esperá, en realidad platform.ts no
+// importa next/cache. Lo dejamos fuera.
+
+import { getSystemHealth } from '../../../app/actions/platform'
+
+type Chain = {
+    select: jest.Mock
+    eq: jest.Mock
+    limit: jest.Mock
+}
+
+/**
+ * Builder de Supabase JS simulado. Soporta 3 estilos de terminal:
+ *   - .limit(1)              → resuelve al final con `returnValue`
+ *   - .select(cols) simple   → resuelve al final con `returnValue`
+ *   - .select(opts).eq(...)  → resuelve como thenable al final con `returnValue`
+ */
+function makeBuilder(returnValue: { data?: unknown; error?: unknown; count?: unknown }) {
+    const builder: Partial<Chain> & Record<string, unknown> = {}
+    builder.select = jest.fn().mockReturnValue(builder)
+    builder.eq = jest.fn().mockImplementation(() => {
+        // eq devuelve un objeto thenable que resuelve con returnValue.
+        return {
+            then: (onFulfilled: (v: unknown) => unknown) => onFulfilled(returnValue),
+        }
+    })
+    builder.limit = jest.fn().mockResolvedValue(returnValue)
+    // Make the builder itself thenable so `await` after `.select()` resolves
+    // with the returnValue (used for queries like `.select('id, active')`).
+    ;(builder as any).then = (onFulfilled: (v: unknown) => unknown) =>
+        onFulfilled(returnValue)
+    return builder as Chain
+}
+
+describe('app/actions/platform.ts — getSystemHealth (Fase 10.5)', () => {
+    let consoleSpy: jest.SpyInstance
+
+    beforeEach(() => {
+        mockFrom.mockReset()
+        mockRequirePlatformRole.mockReset()
+        // Por defecto, asumimos que el caller es platform role válido.
+        mockRequirePlatformRole.mockResolvedValue({
+            user: { id: 'tech-1' },
+            role: 'technician',
+            companyId: null,
+        })
+        // console.error/warn aparecen con try/catch en errores; tests de error
+        // ejercitan getSystemHealth → Platform.check fallido → console.error
+        consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+        consoleSpy = jest.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+        consoleSpy.mockRestore()
+    })
+
+    it('cuenta técnicos por is_platform_admin=true (NO por role=technician)', async () => {
+        // 1) companies.select → para "database" check
+        // 2) companies.select id,active → para "tenants"
+        // 3) profiles.select().eq(is_platform_admin, true) → para "platform-admins"
+
+        let calls = 0
+        mockFrom.mockImplementation((table: string) => {
+            if (table === 'companies') {
+                calls++
+                if (calls === 1) {
+                    // database health check
+                    return makeBuilder({ data: [{ id: 'c1' }], error: null })
+                }
+                // tenants check
+                return makeBuilder({ data: [{ id: 'c1', active: true }], error: null })
+            }
+
+            if (table === 'profiles') {
+                // platform-admins check
+                const eqSpy = jest.fn().mockImplementation((col: string, val: unknown) => {
+                    // El check crítico: se filtra por is_platform_admin, NO por role.
+                    expect(col).toBe('is_platform_admin')
+                    expect(val).toBe(true)
+
+                    // Thenable que resuelve con count = 3
+                    return {
+                        then: (onFulfilled: (v: unknown) => unknown) =>
+                            onFulfilled({ count: 3, error: null }),
+                    }
+                })
+
+                return {
+                    select: jest.fn().mockReturnValue({
+                        eq: eqSpy,
+                    }),
+                }
+            }
+
+            throw new Error(`Unexpected table: ${table}`)
+        })
+
+        const result = await getSystemHealth()
+
+        expect(result.success).toBe(true)
+        expect(result.checks).toBeDefined()
+
+        const platformCheck = result.checks!.find((c) => c.id === 'platform-admins')
+        expect(platformCheck).toBeDefined()
+        expect(platformCheck!.status).toBe('ok')
+        expect(platformCheck!.detail).toContain('3')
+    })
+
+    it('NO usa role=technician para detectar platform admins (regression)', async () => {
+        // Este test falla si alguien revierte el cambio y vuelve a .eq('role', 'technician').
+        let roleCheckCalled = false
+        let isPlatformCheckCalled = false
+
+        mockFrom.mockImplementation((table: string) => {
+            if (table === 'companies') {
+                return makeBuilder({ data: [], error: null })
+            }
+
+            if (table === 'profiles') {
+                return {
+                    select: jest.fn().mockReturnValue({
+                        eq: jest.fn().mockImplementation((col: string, _val: unknown) => {
+                            if (col === 'role') {
+                                roleCheckCalled = true
+                                return {
+                                    then: (onFulfilled: (v: unknown) => unknown) =>
+                                        onFulfilled({ count: 0, error: null }),
+                                }
+                            }
+                            if (col === 'is_platform_admin') {
+                                isPlatformCheckCalled = true
+                                return {
+                                    then: (onFulfilled: (v: unknown) => unknown) =>
+                                        onFulfilled({ count: 1, error: null }),
+                                }
+                            }
+                            throw new Error(`Unexpected column: ${col}`)
+                        }),
+                    }),
+                }
+            }
+
+            throw new Error(`Unexpected table: ${table}`)
+        })
+
+        await getSystemHealth()
+
+        expect(isPlatformCheckCalled).toBe(true)
+        expect(roleCheckCalled).toBe(false)
+    })
+
+    it('reporta error si no hay ningún platform admin configurado', async () => {
+        let calls = 0
+        mockFrom.mockImplementation((table: string) => {
+            if (table === 'companies') {
+                calls++
+                if (calls === 1) {
+                    return makeBuilder({ data: [], error: null })
+                }
+                return makeBuilder({ data: [], error: null })
+            }
+
+            if (table === 'profiles') {
+                return {
+                    select: jest.fn().mockReturnValue({
+                        eq: jest.fn().mockReturnValue({
+                            then: (onFulfilled: (v: unknown) => unknown) =>
+                                onFulfilled({ count: 0, error: null }),
+                        }),
+                    }),
+                }
+            }
+        })
+
+        const result = await getSystemHealth()
+
+        const platformCheck = result.checks!.find((c) => c.id === 'platform-admins')
+        expect(platformCheck!.status).toBe('error')
+        expect(platformCheck!.detail).toContain('Ninguna')
+    })
+
+    it('rechaza al caller si no es platform role', async () => {
+        mockRequirePlatformRole.mockRejectedValueOnce(
+            new Error('FORBIDDEN: se requiere cuenta de plataforma')
+        )
+
+        const result = await getSystemHealth()
+
+        expect(result.success).toBe(false)
+        expect(result.error).toContain('plataforma')
+        // NO debe haber consultado la base
+        expect(mockFrom).not.toHaveBeenCalled()
+    })
+
+    it('maneja count=undefined/null de Supabase sin crashear', async () => {
+        let calls = 0
+        mockFrom.mockImplementation((table: string) => {
+            if (table === 'companies') {
+                calls++
+                if (calls === 1) {
+                    return makeBuilder({ data: [], error: null })
+                }
+                return makeBuilder({ data: [], error: null })
+            }
+
+            if (table === 'profiles') {
+                return {
+                    select: jest.fn().mockReturnValue({
+                        eq: jest.fn().mockReturnValue({
+                            then: (onFulfilled: (v: unknown) => unknown) =>
+                                onFulfilled({ count: null, error: null }),
+                        }),
+                    }),
+                }
+            }
+        })
+
+        const result = await getSystemHealth()
+
+        expect(result.success).toBe(true)
+        const platformCheck = result.checks!.find((c) => c.id === 'platform-admins')
+        // count null → fallback 0 → status error
+        expect(platformCheck!.status).toBe('error')
+    })
+
+    it('singular/plural correcto: 1 cuenta vs N cuentas', async () => {
+        let calls = 0
+        mockFrom.mockImplementation((table: string) => {
+            if (table === 'companies') {
+                calls++
+                if (calls === 1) return makeBuilder({ data: [], error: null })
+                return makeBuilder({ data: [], error: null })
+            }
+
+            if (table === 'profiles') {
+                return {
+                    select: jest.fn().mockReturnValue({
+                        eq: jest.fn().mockReturnValue({
+                            then: (onFulfilled: (v: unknown) => unknown) =>
+                                onFulfilled({ count: 1, error: null }),
+                        }),
+                    }),
+                }
+            }
+        })
+
+        const result = await getSystemHealth()
+        const platformCheck = result.checks!.find((c) => c.id === 'platform-admins')
+
+        // Singular: "1 cuenta"
+        expect(platformCheck!.detail).toContain('1 cuenta')
+        expect(platformCheck!.detail).not.toContain('1 cuentas')
+    })
+})

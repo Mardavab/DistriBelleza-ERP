@@ -50,14 +50,20 @@ Este archivo define reglas y contexto para todos los agentes/asistentes que trab
 
 - **Nunca exponer claves secretas.** `.env.local` contiene `SUPABASE_SERVICE_ROLE_KEY` y ANON (gitignored). No commitear `.env*` con valores reales. **No crear `.env.example`** en este repo (decisión actual).
 - **No hardcodear URLs/IDs.** Leer de env vars (`NEXT_PUBLIC_SUPABASE_URL`, etc.) o `.supabase-project.json`.
-- **Multi-tenancy:** activo (fase 10–12 presentes). Respetar `company_id` y RLS. Revisar contexto empresa (`lib/company.ts`, `lib/supabase/company-context.ts`).
+- **Multi-tenancy:** **Fase 10 cerrada.** Respetar `company_id` y RLS. Revisar contexto empresa (`lib/supabase/company-context.ts`) y membrisías (`lib/supabase/membership-queries.ts`).
+- **Server actions multi-tenant — OBLIGATORIO usar `requireAuthContext`:**
+  - Toda server action de negocio (POS, inventario, ventas, reportes, etc.) **debe** empezar con `const ctx = await requireAuthContext()`. Esto valida sesión + membrisía + rol en una sola línea.
+  - Después, según la acción: `requireOwner(ctx.role)` (solo owners) o `requireRole(ctx.role, ['owner', 'manager'])` (owners + managers).
+  - **NUNCA** leer `profiles.role` directamente. El rol vive en `company_memberships.role` (multi-empresa).
+  - **NUNCA** detectar platform admin con `role = 'technician'`. Usar `profiles.is_platform_admin = true` (vía `isPlatformUser(userId)` o `requirePlatformRole(['technician'])`).
 - **Estilo:** TypeScript no-strict, App Router. No añadir comentarios innecesarios. Seguir patrones existentes en el código.
 
 ## 6. Estado del repositorio
 
-- **Working tree sucio** (cambios/modificaciones y archivos untracked presentes, p.ej. fase 10, `.supabase-project.json`, `opencode.json`).
-- **Multi-tenancy en curso** (migraciones fase 10–12 presentes). `migrations/README.md` puede estar desactualizado respecto a archivos existentes.
-- **Sin `AGENTS.md` previo.** Este archivo es nuevo y específico solo para este proyecto.
+- **Fase 10 multi-empresa cerrada** (Bloque A listo para deploy — migraciones pendientes de aplicar en Supabase).
+- **Multi-sucursal (Fase 11)**: pendiente, en planificación (ROADMAP_MULTISUCURSAL.md por crear).
+- **Working tree sucio** (cambios sin commitear del Bloque A: migraciones 10.6–10.8, refactor en 4 archivos, 53 tests nuevos).
+- `migrations/fase-10-multi-empresa/README.md` documenta el orden exacto de aplicación de las migraciones de la fase 10.
 
 ## 7. Reglas para agentes
 
