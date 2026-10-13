@@ -3,8 +3,7 @@
 import React, { useState } from 'react';
 import { X, AlertCircle, RefreshCw, CheckCheck } from 'lucide-react';
 import { isFailure } from '../../lib/errors';
-import type { Supplier } from '../../app/actions/suppliers';
-import { createSupplier, updateSupplier } from '../../app/actions/suppliers';
+import { createSupplier, updateSupplier, type Supplier } from '../../app/actions/suppliers';
 
 type SupplierModalProps = {
   initial?: Supplier | null;

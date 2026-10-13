@@ -4,8 +4,7 @@ import React, { useState } from 'react';
 import { X, AlertCircle, RefreshCw, DollarSign } from 'lucide-react';
 import { isFailure } from '../../lib/errors';
 import { formatCurrency, formatCurrencyInput, parseCurrencyInput } from '../../lib/format';
-import { addInvoicePayment } from '../../app/actions/suppliers';
-import type { SupplierInvoice } from '../../app/actions/suppliers';
+import { addInvoicePayment, type SupplierInvoice } from '../../app/actions/suppliers';
 
 type AbonoModalProps = {
   invoice: SupplierInvoice;

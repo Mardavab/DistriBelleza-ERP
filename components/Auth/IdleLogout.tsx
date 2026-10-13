@@ -47,7 +47,9 @@ export default function IdleLogout() {
     const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const lastActivityRef = useRef<number>(Date.now());
+    // Se inicializa en 0 y se setea con Date.now() en resetTimers() al montar
+    // (llamar Date.now() durante render viola react-hooks/purity).
+    const lastActivityRef = useRef<number>(0);
 
     const clearTimers = () => {
         if (idleTimerRef.current) clearTimeout(idleTimerRef.current);

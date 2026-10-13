@@ -4,8 +4,7 @@ import React, { useState } from 'react';
 import { X, AlertCircle, RefreshCw, CheckCircle } from 'lucide-react';
 import { isFailure } from '../../lib/errors';
 import { formatCurrency } from '../../lib/format';
-import { markInvoiceAsPaid } from '../../app/actions/suppliers';
-import type { SupplierInvoice } from '../../app/actions/suppliers';
+import { markInvoiceAsPaid, type SupplierInvoice } from '../../app/actions/suppliers';
 
 type PayConfirmModalProps = {
   invoice: SupplierInvoice;

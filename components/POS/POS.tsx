@@ -185,26 +185,6 @@ export default function POS() {
     });
   }, [cart, cashReceived, customerId, totalDiscount, paymentMethod, transferType]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (showOpenSession || showHistory || showCloseModal || showPercentModal || successData) return;
-
-      if (e.key === 'F2') {
-        e.preventDefault();
-        searchInputRef.current?.focus();
-      }
-      if (e.key === 'F4') {
-        e.preventDefault();
-        if (cart.length > 0 && activeSession && !isLoading) {
-          handleCheckout();
-        }
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [cart, activeSession, isLoading, showOpenSession, showHistory, showCloseModal, showPercentModal, successData]);
-
   // Auto-focus on search input when session becomes available
   useEffect(() => {
     if (activeSession && !isLoading) {
@@ -409,6 +389,27 @@ setSuccessData(res as Extract<typeof res, { success: true }>);
     }
     setIsLoading(false);
   };
+
+  // Keyboard shortcuts (declarado después de handleCheckout: F4 lo invoca)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (showOpenSession || showHistory || showCloseModal || showPercentModal || successData) return;
+
+      if (e.key === 'F2') {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+      }
+      if (e.key === 'F4') {
+        e.preventDefault();
+        if (cart.length > 0 && activeSession && !isLoading) {
+          handleCheckout();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, activeSession, isLoading, showOpenSession, showHistory, showCloseModal, showPercentModal, successData]);
 
   const removeFromCart = (id: string) => {
     setCart(prev => prev.filter(item => item.variant_id !== id));

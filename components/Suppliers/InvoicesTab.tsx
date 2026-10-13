@@ -12,8 +12,7 @@ import {
   CheckCircle,
   RefreshCw,
 } from 'lucide-react';
-import type { Supplier, SupplierInvoice } from '../../app/actions/suppliers';
-import { deleteSupplierInvoice } from '../../app/actions/suppliers';
+import { deleteSupplierInvoice, type Supplier, type SupplierInvoice } from '../../app/actions/suppliers';
 import { formatCurrency, formatDate } from '../../lib/format';
 import { StatusBadge, isOverdue } from './utils';
 import InvoiceModal from './InvoiceModal';

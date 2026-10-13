@@ -4,8 +4,7 @@ import React, { useState } from 'react';
 import { X, AlertCircle, RefreshCw, Edit2, Plus } from 'lucide-react';
 import { isFailure } from '../../lib/errors';
 import { formatCurrencyInput, parseCurrencyInput } from '../../lib/format';
-import type { Supplier, SupplierInvoice } from '../../app/actions/suppliers';
-import { createSupplierInvoice, updateSupplierInvoice } from '../../app/actions/suppliers';
+import { createSupplierInvoice, updateSupplierInvoice, type Supplier, type SupplierInvoice } from '../../app/actions/suppliers';
 
 type InvoiceModalProps = {
   initial?: SupplierInvoice | null;

@@ -2,8 +2,7 @@
 
 import React, { useState } from 'react';
 import { Search, Plus, Truck, Edit2, Trash2, Building2, RefreshCw } from 'lucide-react';
-import type { Supplier } from '../../app/actions/suppliers';
-import { deleteSupplier } from '../../app/actions/suppliers';
+import { deleteSupplier, type Supplier } from '../../app/actions/suppliers';
 import SupplierModal from './SupplierModal';
 import ConfirmModal from './ConfirmModal';
 
