@@ -6,7 +6,9 @@ import { NextResponse, type NextRequest } from 'next/server'
  *
  * FASE 4:
  *   - Refresca la sesión del usuario en cada request.
- *   - Redirige a /login si no hay sesión intentando acceder a /.
+ *   - Redirige a /login si no hay sesión intentando acceder a una ruta
+ *     protegida (/, /pos, /inventario, /proveedores, /reportes,
+ *     /gastos-mayores, /sucursales, /configuracion, /plataforma).
  *   - Redirige a /no-tenant si el usuario está autenticado pero no tiene
  *     company_id en su app_metadata.
  *   - Redirige a / si el usuario autenticado intenta acceder a /login.
@@ -56,8 +58,25 @@ export async function middleware(request: NextRequest) {
     // Reglas de protección de rutas
     // ============================================================
 
-    // 1) / requiere sesión válida + company_id (o rol de plataforma)
-    if (pathname === '/') {
+    // 1) Rutas de la app autenticada: requieren sesión válida +
+    //    company_id (o rol de plataforma)
+    const PROTECTED_PREFIXES = [
+        '/pos',
+        '/inventario',
+        '/proveedores',
+        '/reportes',
+        '/gastos-mayores',
+        '/sucursales',
+        '/configuracion',
+        '/plataforma',
+    ]
+    const isProtectedRoute =
+        pathname === '/' ||
+        PROTECTED_PREFIXES.some(
+            (p) => pathname === p || pathname.startsWith(`${p}/`)
+        )
+
+    if (isProtectedRoute) {
         if (!user) {
             return NextResponse.redirect(new URL('/login', request.url))
         }

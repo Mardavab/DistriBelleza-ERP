@@ -1,6 +1,8 @@
 'use client'
 
 import React from 'react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -41,28 +43,39 @@ export interface SidebarProfile {
 
 interface SidebarProps {
   userProfile?: SidebarProfile | null;
-  activeTab: string;
-  setActiveTab: (tab: string) => void;
   companyName?: string;
 }
 
 interface MenuItem {
-  id: string;
+  href: string;
   name: string;
   icon: React.ReactNode;
   /** Solo visible para el owner de la empresa. */
   ownerOnly?: boolean;
 }
 
-/**
- * Tabs de negocio: no tienen sentido para una cuenta de plataforma, cuyo
- * alcance es la consola de plataforma y no los datos de un tenant.
- * `app/page.tsx` lo usa para impedir que un técnico renderice un módulo de
- * empresa aunque manipule el estado del tab.
- */
-export const BUSINESS_TABS = ['dashboard', 'pos', 'inventory', 'suppliers', 'major-expenses', 'reports', 'branches', 'config'];
+// Consola de plataforma: salud del sistema y gestión de tenants.
+// No incluye POS, Inventario, Proveedores ni Reportes porque son datos
+// privados de cada empresa.
+const platformMenu: MenuItem[] = [
+  { href: '/plataforma', name: 'Consola de Plataforma', icon: <Activity size={20} /> },
+  { href: '/plataforma/salud', name: 'Salud del Sistema', icon: <HeartPulse size={20} /> },
+  { href: '/plataforma/empresas', name: 'Empresas', icon: <Globe size={20} /> },
+];
 
-export default function Sidebar({ userProfile, activeTab, setActiveTab, companyName }: SidebarProps) {
+const companyMenu: MenuItem[] = [
+  { href: '/', name: 'Panel de Control', icon: <LayoutDashboard size={20} /> },
+  { href: '/pos', name: 'Punto de Venta', icon: <ShoppingCart size={20} /> },
+  { href: '/inventario', name: 'Inventario', icon: <Package size={20} /> },
+  { href: '/proveedores', name: 'Proveedores', icon: <Truck size={20} /> },
+  { href: '/gastos-mayores', name: 'Gastos Mayores', icon: <Building2 size={20} />, ownerOnly: true },
+  { href: '/reportes', name: 'Reportes', icon: <BarChart3 size={20} /> },
+  { href: '/sucursales', name: 'Sucursales', icon: <Store size={20} />, ownerOnly: true },
+  { href: '/configuracion', name: 'Configuración', icon: <Settings size={20} />, ownerOnly: true },
+];
+
+export default function Sidebar({ userProfile, companyName }: SidebarProps) {
+  const pathname = usePathname();
   const role = userProfile?.role || 'manager';
   const isPlatformAdmin = userProfile?.is_platform_admin === true;
 
@@ -70,26 +83,6 @@ export default function Sidebar({ userProfile, activeTab, setActiveTab, companyN
   const displayName = isPlatformAdmin
     ? 'DistriBelleza'
     : (companyName || userProfile?.companies?.trade_name || userProfile?.companies?.legal_name || 'ERP');
-
-  // Consola de plataforma: salud del sistema y gestión de tenants.
-  // No incluye POS, Inventario, Proveedores ni Reportes porque son datos
-  // privados de cada empresa.
-  const platformMenu: MenuItem[] = [
-    { id: 'platform', name: 'Consola de Plataforma', icon: <Activity size={20} /> },
-    { id: 'health', name: 'Salud del Sistema', icon: <HeartPulse size={20} /> },
-    { id: 'companies', name: 'Empresas', icon: <Globe size={20} /> },
-  ];
-
-  const companyMenu: MenuItem[] = [
-    { id: 'dashboard', name: 'Panel de Control', icon: <LayoutDashboard size={20} /> },
-    { id: 'pos', name: 'Punto de Venta', icon: <ShoppingCart size={20} /> },
-    { id: 'inventory', name: 'Inventario', icon: <Package size={20} /> },
-    { id: 'suppliers', name: 'Proveedores', icon: <Truck size={20} /> },
-    { id: 'major-expenses', name: 'Gastos Mayores', icon: <Building2 size={20} />, ownerOnly: true },
-    { id: 'reports', name: 'Reportes', icon: <BarChart3 size={20} /> },
-    { id: 'branches', name: 'Sucursales', icon: <Store size={20} />, ownerOnly: true },
-    { id: 'config', name: 'Configuración', icon: <Settings size={20} />, ownerOnly: true },
-  ];
 
   const menuItems = (isPlatformAdmin ? platformMenu : companyMenu)
     .filter(item => !item.ownerOnly || role === 'owner');
@@ -107,6 +100,11 @@ export default function Sidebar({ userProfile, activeTab, setActiveTab, companyN
   // el owner debe usar BranchManagement para asignar primero).
   const branchMemberships = userProfile?.branch_memberships ?? [];
   const showBranchSelector = !isPlatformAdmin && branchMemberships.length > 0;
+
+  const isActive = (href: string) =>
+    href === '/'
+      ? pathname === '/'
+      : pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <aside className="sidebar">
@@ -140,14 +138,14 @@ export default function Sidebar({ userProfile, activeTab, setActiveTab, companyN
 
       <nav className="nav-links">
         {menuItems.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => setActiveTab(item.id)}
-            className={`nav-link-btn ${activeTab === item.id ? 'active' : ''}`}
+          <Link
+            key={item.href}
+            href={item.href}
+            className={`nav-link-btn ${isActive(item.href) ? 'active' : ''}`}
           >
             {item.icon}
             <span>{item.name}</span>
-          </button>
+          </Link>
         ))}
       </nav>
 

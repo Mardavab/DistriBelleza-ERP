@@ -96,7 +96,7 @@ export async function getCurrentBranchIdSafe(): Promise<string | null> {
  * server action operacional) NO necesita recargar el navegador porque
  * los flows operacionales suelen empezar con un redirect o un revalidate
  * tras la acción. La sincronización del JWT la gestiona
- * `getUserProfile` al cargar el dashboard (`app/page.tsx`).
+ * `getUserProfile` al cargar la app (`components/Dashboard/AppShell.tsx`).
  */
 export async function requireBranchContext(): Promise<{ userId: string; branchId: string }> {
     const supabase = createClient()
@@ -211,8 +211,9 @@ export async function getUserDefaultBranchId(userId: string): Promise<string | n
  *   `refreshSession()` o tras recargar la pestaña. Resultado: el
  *   usuario tenía que cerrar sesión y volver a entrar. Para evitar
  *   esto, el side-effect se movió a `getUserProfile` (auth.ts),
- *   que retorna `branch_sync_needed: boolean` y `app/page.tsx`
- *   fuerza `window.location.reload()` cuando es `true`.
+ *   que retorna `branch_sync_needed: boolean` y el AppShell
+ *   (`components/Dashboard/AppShell.tsx`) fuerza
+ *   `window.location.reload()` cuando es `true`.
  *
  * IMPORTANTE: `admin.updateUserById` REEMPLAZA `app_metadata`
  * completamente. Por eso mergeamos con el `currentAppMetadata` del

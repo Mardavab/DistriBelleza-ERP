@@ -147,8 +147,8 @@ export interface UserProfile {
      *   - El JWT traía un `branch_id` distinto del branch activo real
      *     (caso degenerado: JWT desincronizado o branch eliminado).
      *
-     * Cuando es `true`, el cliente (`app/page.tsx`) llama
-     * `supabase.auth.refreshSession()` y luego
+     * Cuando es `true`, el cliente (`components/Dashboard/AppShell.tsx`)
+     * llama `supabase.auth.refreshSession()` y luego
      * `window.location.reload()` para que el próximo request traiga el
      * JWT con el `branch_id` correcto. Sin esto, Supabase no refresca
      * el access token en cada request y el usuario quedaba con el JWT
@@ -262,7 +262,7 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     // diferimos, `syncBranchIdToJwtIfMissing` se vuelve un no-op
     // efectivo (porque activeBranchId === jwtBranchId siempre), y el
     // usuario queda con el JWT cacheado viejo — bug que producía un
-    // loop de refresh en `app/page.tsx` (Hallazgo ALTO #1 del auditor).
+    // loop de refresh en el AppShell (Hallazgo ALTO #1 del auditor).
     const jwtBranchId = user.app_metadata?.branch_id as string | undefined
     let activeBranchMembership = branchMemberships.find(
         (m) => m.branch_id === jwtBranchId
@@ -286,8 +286,9 @@ export async function getUserProfile(): Promise<UserProfile | null> {
     //
     // `syncBranchIdToJwtIfMissing` devuelve `true` cuando escribe
     // (JWT desincronizado: null, distinto, o membership eliminada). El
-    // cliente (`app/page.tsx`) siempre llama `refreshSession()` y luego
-    // `window.location.reload()` cuando este flag es `true`.
+    // cliente (`components/Dashboard/AppShell.tsx`) siempre llama
+    // `refreshSession()` y luego `window.location.reload()` cuando este
+    // flag es `true`.
     //
     // Si la sincronización falla (rate-limit de Admin API, red, etc.),
     // NO rompe la carga del dashboard: log warn y devolvemos

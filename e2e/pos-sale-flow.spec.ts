@@ -63,6 +63,7 @@ test.describe('Flujo crítico de venta POS', () => {
   test('POS: abrir caja permite cargar productos', async ({ page }) => {
     const ok = await login(page, test);
     if (!ok) return;
+    await page.goto('/pos');
 
     // Si ya hay sesión de caja abierta, este paso se skipea.
     const openSessionButton = page.getByRole('button', { name: /abrir caja/i });
@@ -81,6 +82,7 @@ test.describe('Flujo crítico de venta POS', () => {
   test('POS: agregar producto al carrito vía búsqueda', async ({ page }) => {
     const ok = await login(page, test);
     if (!ok) return;
+    await page.goto('/pos');
 
     // Saltar si no hay sesión de caja.
     const openSessionButton = page.getByRole('button', { name: /abrir caja/i });
@@ -106,6 +108,7 @@ test.describe('Flujo crítico de venta POS', () => {
   test('POS: aplicar descuento por item vía modal', async ({ page }) => {
     const ok = await login(page, test);
     if (!ok) return;
+    await page.goto('/pos');
 
     const percentButton = page.locator('.btn-percent-inline').first();
     if (await percentButton.isVisible({ timeout: 2000 }).catch(() => false)) {
@@ -120,6 +123,7 @@ test.describe('Flujo crítico de venta POS', () => {
     await page.setViewportSize({ width: 1024, height: 768 });
     const ok = await login(page, test);
     if (!ok) return;
+    await page.goto('/pos');
 
     // El sidebar debe colapsar a iconos (no texto).
     const sidebarText = page.locator('.sidebar').getByText(/inventario|reportes|proveedores/i).first();

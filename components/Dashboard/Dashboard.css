@@ -54,6 +54,7 @@
   border: none;
   width: 100%;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
   border-radius: var(--radius-base);
   font-size: var(--font-base);
