@@ -150,7 +150,7 @@ export async function processPOSSale(
       p_items: items,
       p_payment_method: paymentMethod,
       p_transfer_type: transferType,
-      p_total_discount: totalDiscount,
+      p_discount_amount: totalDiscount,
     });
 
     if (error) {
