@@ -80,11 +80,6 @@ coverage/
 .vercel
 
 # ------------------------------------------------------------------------------
-# PRINT SERVICE — Configuración local por máquina (nombre de impresora)
-# ------------------------------------------------------------------------------
-print-service/config.json
-
-# ------------------------------------------------------------------------------
 # SUPABASE — Backups de datos de producción (contienen PII: clientes, empleados,
 # proveedores). Artefactos locales de la migración multi-tenant.
 # NO deben subirse al repositorio. Mantenerlos solo en disco para rollback.
@@ -96,3 +91,4 @@ Supabase/**/.temp/
 test-results/
 playwright-report/
 .playwright/
+graphify-out/

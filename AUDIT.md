@@ -18,8 +18,8 @@ propuestas e ideas futuras.
 | **Secretos en cliente** | ✅ Bien aislados | `lib/supabase.ts` lanza si se importa en cliente. |
 | **Console.log** | ✅ Solo errores/warns permitidos | 0 console.log, 0 console.debug. |
 | **Catch vacíos** | ⚠️ 68 silenciados | Ver §4.2. |
-| **Print-service** | ⚠️ Carpeta muerta | `print-service/` ya no se usa pero sigue en repo. |
-| **Constantes muertas** | ✅ Limpiado | `lib/constants.ts` solo tiene comentario. |
+| **Print-service** | ✅ Eliminada | `print-service/` borrada en `7f457c2`. Impresión vía WebUSB (`lib/print/`). |
+| **Constantes muertas** | ✅ Eliminado | `lib/constants.ts` borrado (no tenía importadores). |
 
 ---
 
@@ -91,10 +91,10 @@ npm audit fix --force   # actualiza next a 16.x — requiere revisar breaking ch
 | Archivo | Regla | Cantidad |
 |---|---|---|
 | `components/POS/POS.tsx` | `use-before-declaration` (handleCheckout antes de declaración) | 1 |
-| `print-service/printer.js` | `@typescript-eslint/no-require-imports` (CommonJS require en .js) | 5 |
-| `print-service/server.js` | idem | 5 |
+| ~~`print-service/printer.js`~~ | ~~`@typescript-eslint/no-require-imports`~~ | ~~5~~ ✅ |
+| ~~`print-service/server.js`~~ | ~~idem~~ | ~~5~~ ✅ |
 
-→ `print-service/` debería eliminarse o excluirse del lint (ver §3).
+→ Los 10 errores de `print-service/` desaparecieron al eliminar la carpeta (`7f457c2`). Ver §3.1.
 
 ### 2.4 Warnings (todos preexistentes)
 
@@ -109,7 +109,11 @@ npm audit fix --force   # actualiza next a 16.x — requiere revisar breaking ch
 
 ## 3. Cosas innecesarias / muertas
 
-### 3.1 `print-service/` (carpeta completa)
+### 3.1 `print-service/` (carpeta completa) — ✅ RESUELTO
+
+**Eliminada en `7f457c2`.** No está en el working tree ni en `git ls-files`.
+
+Contenido que tenía (se conserva la descripción como registro):
 
 ```
 print-service/
@@ -122,21 +126,15 @@ print-service/
 └── server.js
 ```
 
-- **Ya no se usa**. La impresión ahora es WebUSB/WebSerial/Window.print del lado del cliente.
-- El `dev` script ya no la arranca (commit `1ddbfa6`).
-- `lib/constants.ts` ya no la referencia (comentada en este commit).
-- Genera ruido en lint (15 errores de `require()` en .js).
+- **Ya no se usaba**. La impresión ahora es WebUSB/WebSerial/window.print del lado del cliente (`lib/print/`).
+- El `dev` script ya no la arrancaba (commit `1ddbfa6`).
+- Generaba ruido en lint (15 errores de `require()` en .js).
 
-**Acción recomendada**:
-```bash
-rm -rf print-service/
-```
+**Estado actual de la impresión:** el branding por tenant (`receipt_header` / `receipt_footer` de `company_settings`, migración fase-6) llega al recibo por `components/POS/POS.tsx` → `components/POS/PrintReceipt.tsx` → `lib/print/`. El check de salud `printing` de la consola de plataforma es informativo (WebUSB local, siempre `ok`).
 
-Pediste conservarla "por ahora" — dejo la nota para cuando se decida.
+### 3.2 `lib/constants.ts` — ✅ RESUELTO
 
-### 3.2 `lib/constants.ts`
-
-Limpiado en este commit. Solo queda un comentario explicativo.
+**Archivo eliminado.** Contenía solo una constante comentada (`PRINT_SERVICE_URL`) y no tenía importadores.
 
 ### 3.3 Imports / variables sin usar
 
@@ -331,7 +329,7 @@ find components/ -name "*.tsx" -exec wc -l {} \; | sort -rn
 - ✅ `app/actions/companies.ts:81` — `let company` → `const company` (prefer-const).
 - ✅ `components/UI/UserManagement.tsx:169` — `"Nuevo Empleado"` → {`"Nuevo Empleado"`}.
 - ✅ `components/Platform/CreateCompanyModal.tsx:215` — `{success.trade_name}` escapado.
-- ✅ `lib/constants.ts` — limpieza, solo comentario explicativo.
+- ✅ `lib/constants.ts` — archivo eliminado (cero importadores).
 
 **4 errores de lint eliminados**.
 
@@ -340,7 +338,7 @@ find components/ -name "*.tsx" -exec wc -l {} \; | sort -rn
 ## Próxima sesión sugerida
 
 Orden recomendado de trabajo futuro:
-1. **Eliminar `print-service/`** (carpeta muerta).
+1. ~~**Eliminar `print-service/`** (carpeta muerta).~~ ✅ Hecho en `7f457c2`.
 2. **Arreglar `__tests__/layout.test.tsx`** (mock de supabase).
 3. **Tests de server actions críticos** (`processPOSSale`).
 4. **Migrar a next@16.x** (cierra 30+ advisories de npm).
