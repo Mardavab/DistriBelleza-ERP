@@ -2,6 +2,29 @@
 -- Fase 13 — Alinear firma de `tenant_process_sale` con la realidad
 -- ============================================================
 --
+-- ⚠️  AVISO (corregido a posteriori) — LEER ANTES DE USAR
+--
+--   Esta migración se aplicó en producción el 2026-10-20 y, aunque alineó la
+--   FIRMA correctamente, instaló un CUERPO que referenciaba objetos
+--   inexistentes en el esquema. Dejó el POS sin poder registrar ventas
+--   (última venta exitosa: 2026-10-12). Los defectos eran:
+--
+--     * `pv.price_override`     → no existe; el precio es `pv.price`
+--     * `sales.total`           → la columna es `sales.total_amount`
+--     * `sales.received_amount` → la columna es `sales.paid_amount`
+--     * `sales.cash_change`     → la columna es `sales.pending_balance`
+--     * `branch_stock`          → la tabla NO existe; el stock es
+--                                 `product_variants.stock` (Bloque D)
+--
+--   El SQL de abajo YA FUE CORREGIDO para reflejar lo que debe instalarse.
+--   Lo que realmente corrigió producción es
+--   `migrations/fase-15-fix-pos-rpcs/` (2026-10-22).
+--
+--   Si necesitás ver el cuerpo exactamente como se aplicó el 2026-10-20
+--   (roto), está en el historial de git de este archivo, antes del commit de
+--   la Fase 15.
+--
+-- ============================================================
 -- Contexto:
 --   La función `tenant_process_sale` en producción diverge de la migración
 --   versionada `fase-11-multi-sucursal/20261101000004_tenant_rpc_with_branch.sql`.
@@ -118,7 +141,7 @@ BEGIN
         v_quantity := (v_item->>'quantity')::INT;
         v_item_discount := COALESCE((v_item->>'discount')::NUMERIC, 0);
 
-        SELECT COALESCE(pv.price_override, p.price_base)
+        SELECT COALESCE(pv.price, p.price_base)
         INTO v_unit_price
         FROM products p
         JOIN product_variants pv ON pv.product_id = p.id
@@ -141,19 +164,26 @@ BEGIN
         v_change := p_received_amount - v_total_with_discount;
     END IF;
 
-    -- 5. Insertar venta con company_id y branch_id
+    -- 5. Insertar venta con company_id y branch_id.
+    --    Columnas REALES de `sales`. No existe `cash_change`: el vuelto se
+    --    deriva de `paid_amount - total_with_discount`. El cuerpo autoritativo
+    --    está en migrations/fase-15-fix-pos-rpcs/.
     INSERT INTO sales (
         company_id, branch_id, customer_id, payment_method, transfer_type,
-        total, total_with_discount, discount_amount,
-        received_amount, cash_change, status, cash_session_id
+        total_amount, total_with_discount, discount_amount,
+        paid_amount, pending_balance, status, cash_session_id
     ) VALUES (
         p_company_id, p_branch_id, p_customer_id, p_payment_method, p_transfer_type,
         v_total, v_total_with_discount, p_discount_amount,
-        p_received_amount, v_change, p_status, v_session_id
+        COALESCE(p_received_amount, v_total_with_discount),
+        CASE WHEN p_payment_method = 'CREDIT'
+             THEN GREATEST(v_total_with_discount - COALESCE(p_received_amount, v_total_with_discount), 0)
+             ELSE 0 END,
+        p_status, v_session_id
     )
     RETURNING id INTO v_sale_id;
 
-    -- 6. Insertar items, descontar stock de branch_stock, registrar movimientos
+    -- 6. Insertar items, descontar stock de product_variants, registrar movimientos
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
     LOOP
         v_product_id := (v_item->>'product_id')::UUID;
@@ -161,7 +191,7 @@ BEGIN
         v_quantity := (v_item->>'quantity')::INT;
         v_item_discount := COALESCE((v_item->>'discount')::NUMERIC, 0);
 
-        SELECT COALESCE(pv.price_override, p.price_base)
+        SELECT COALESCE(pv.price, p.price_base)
         INTO v_unit_price
         FROM products p
         JOIN product_variants pv ON pv.product_id = p.id
@@ -175,10 +205,11 @@ BEGIN
             v_quantity, v_unit_price, v_item_discount
         );
 
-        -- Descontar stock de branch_stock
-        UPDATE branch_stock
+        -- Descontar stock: `branch_stock` no existe, el stock es global de la
+        -- empresa en `product_variants` (Bloque D).
+        UPDATE product_variants
         SET stock = stock - v_quantity, updated_at = now()
-        WHERE branch_id = p_branch_id AND variant_id = v_variant_id AND stock >= v_quantity;
+        WHERE id = v_variant_id AND company_id = p_company_id AND stock >= v_quantity;
 
         IF NOT FOUND THEN
             RETURN jsonb_build_object('success', false, 'error', 'CONFLICT_409: stock insuficiente para ' || v_variant_id::text);

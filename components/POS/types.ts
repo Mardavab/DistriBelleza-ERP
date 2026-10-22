@@ -10,6 +10,8 @@
 
 export interface CartItem {
     variant_id: string;
+    /** Vínculo venta↔producto. Sin esto, sale_items.product_id queda NULL. */
+    product_id: string;
     product_name: string;
     variant_name: string;
     sku: string;

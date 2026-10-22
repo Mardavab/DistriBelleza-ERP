@@ -6,6 +6,8 @@ import { formatCurrency } from '../../lib/format';
 
 export interface SearchResult {
     variant_id: string;
+    /** Vínculo venta↔producto. Sin esto, sale_items.product_id queda NULL. */
+    product_id: string;
     product_name: string;
     product_brand: string;
     variant_name: string;

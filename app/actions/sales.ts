@@ -6,11 +6,13 @@ import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { requireRole } from '../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
-import { handleActionError, AppError, err } from '../../lib/errors';
+import { handleActionError, AppError, err, warnSilently } from '../../lib/errors';
 import { audit } from '../../lib/audit';
 
 export interface POSItem {
   variant_id: string;
+  /** Opcional: si no llega, la RPC lo resuelve desde `product_variants`. */
+  product_id?: string;
   quantity: number;
   expected_updated_at: string;
   discount: number;
@@ -23,6 +25,8 @@ export interface POSItem {
  */
 export interface POSSearchResult {
   variant_id: string;
+  /** Vínculo venta↔producto; la RPC `tenant_search_inventory` lo devuelve. */
+  product_id: string;
   product_name: string;
   product_brand: string;
   variant_name: string;
@@ -52,11 +56,29 @@ export async function searchPOSProducts(query: string): Promise<POSSearchResult[
   const { data, error } = await supabaseAdmin.rpc('tenant_search_inventory', {
     p_company_id: companyId,
     p_branch_id: branchId,
-    search_term: cleaned,
+    // El parámetro de la RPC es `p_search_term`. Antes se mandaba
+    // `search_term`, que PostgREST ignoraba y la búsqueda no filtraba.
+    p_search_term: cleaned,
+    p_limit: 20,
   });
 
-  if (error) return [];
-  return (data ?? []) as POSSearchResult[];
+  if (error) {
+    warnSilently('searchPOSProducts', error);
+    return [];
+  }
+
+  const rows = (data ?? []) as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    variant_id: r.variant_id as string,
+    product_id: r.product_id as string,
+    product_name: r.product_name as string,
+    product_brand: (r.brand as string) ?? '',
+    variant_name: (r.variant_name as string) ?? (r.product_name as string),
+    sku: r.sku as string,
+    barcode: (r.barcode as string | null) ?? null,
+    price: Number(r.price ?? 0),
+    stock: Number(r.stock ?? 0),
+  }));
 }
 
 export async function getDefaultProducts(page: number = 1, pageSize: number = 200) {
@@ -73,7 +95,7 @@ export async function getDefaultProducts(page: number = 1, pageSize: number = 20
     .from('product_variants')
     .select(`
       id, sku, price, name, stock, updated_at,
-      products!inner(name, brand, price_base)
+      products!inner(id, name, brand, price_base)
     `, { count: 'exact' })
     .eq('company_id', companyId)
     .gt('stock', 0)
@@ -87,6 +109,7 @@ export async function getDefaultProducts(page: number = 1, pageSize: number = 20
 
   const formattedData = data.map((v: any) => ({
     variant_id: v.id,
+    product_id: v.products.id,
     product_name: v.products.name,
     product_brand: v.products.brand,
     variant_name: v.name,

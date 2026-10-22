@@ -253,6 +253,7 @@ export default function POS() {
       }
       return [...prev, {
         variant_id: product.variant_id,
+        product_id: product.product_id,
         product_name: product.product_name,
         variant_name: product.variant_name,
         sku: product.sku,
@@ -339,7 +340,7 @@ export default function POS() {
 
     const res = await processPOSSale(
       customerId || null,
-      cart.filter(c => c.quantity > 0).map(({ variant_id, quantity, expected_updated_at, discount }) => ({ variant_id, quantity, expected_updated_at, discount })),
+      cart.filter(c => c.quantity > 0).map(({ variant_id, product_id, quantity, expected_updated_at, discount }) => ({ variant_id, product_id, quantity, expected_updated_at, discount })),
       paymentMethod,
       paymentMethod === 'BANK_TRANSFER' ? transferType : null,
       Number(totalDiscount)

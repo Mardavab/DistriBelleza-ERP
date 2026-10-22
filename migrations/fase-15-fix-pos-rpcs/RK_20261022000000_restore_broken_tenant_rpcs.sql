@@ -1,0 +1,40 @@
+-- ============================================================
+-- ROLLBACK RK_20261022000000_restore_broken_tenant_rpcs.sql (Fase 15)
+-- ============================================================
+-- Revierte las tres migraciones 2026102200000* de la Fase 15 restaurando el
+-- cuerpo que tenían las RPCs antes: el instalado por
+--   migrations/fase-13-rpc-align/20261020000000_align_tenant_process_sale.sql
+--
+-- ⚠️  ADVERTENCIA — ESTE ROLLBACK DEJA EL POS ROTO.
+--
+-- El cuerpo de fase-13 referencia objetos que no existen en el esquema:
+--   * `pv.price_override`       (real: `pv.price`)
+--   * `sales.total`             (real: `sales.total_amount`)
+--   * `sales.received_amount`   (real: `sales.paid_amount`)
+--   * `sales.cash_change`       (real: `sales.pending_balance`)
+--   * `branch_stock`            (la tabla NO existe; el stock es
+--                                `product_variants.stock`, Bloque D)
+--
+-- Restaurarlo significa volver al estado en el que el POS no puede registrar
+-- ventas ni anularlas y la búsqueda no encuentra nada. Solo tiene sentido como
+-- "volver exactamente a como estaba" para comparar comportamientos, no como
+-- estado operativo.
+--
+-- Para revertir de verdad, preferir volver a aplicar la Fase 15.
+--
+-- Cómo aplicar este rollback:
+--   Ejecutar el archivo de fase-13 tal cual (hace CREATE OR REPLACE FUNCTION
+--   de las tres funciones con el cuerpo roto):
+--
+--     psql "$DB_URL" -f migrations/fase-13-rpc-align/20261020000000_align_tenant_process_sale.sql
+--
+--   Ese archivo solo reemplaza `tenant_process_sale`. Para restaurar también
+--   `tenant_delete_sale` y `tenant_search_inventory` al cuerpo anterior, ver
+--   `migrations/fase-11-multi-sucursal/` (borrador previo) o el volcado de
+--   `pg_proc.prosrc` tomado antes de aplicar la Fase 15.
+--
+-- No se duplica aquí el SQL de fase-13 a propósito: copiar 200 líneas de un
+-- cuerpo que se sabe incorrecto multiplica el error. La fuente es el archivo
+-- de fase-13, que además se corrigió en esta fase para reflejar lo que
+-- realmente se instala (ver README de la Fase 15).
+-- ============================================================
