@@ -83,7 +83,8 @@ Este archivo define reglas y contexto para todos los agentes/asistentes que trab
   - Patrón: después de cada `CREATE OR REPLACE FUNCTION` en `public`, hacer `REVOKE EXECUTE ... FROM PUBLIC, anon` y `GRANT ... TO service_role`. Revocar de **ambos** (`anon` tiene grant explícito además del heredado de `PUBLIC`).
   - Verificar con `has_function_privilege('anon', '<firma>', 'EXECUTE')`. Firmas con `pg_get_function_identity_arguments`, nunca a mano.
   - Las server actions llaman las RPCs con `supabaseAdmin` (`service_role`), así que revocar `authenticated` no rompe nada. Excepción conocida: `accept_invitation` necesita `anon` porque `/accept-invitation` se ejecuta con el invitado sin sesión.
-  - Migración de referencia: `fase-16-harden-rpc-grants/`.
+  - **`search_path` fijado:** toda función debe llevar `SET search_path = public, extensions, pg_temp`. Sin eso, `pg_temp` se busca primero y un caller (que puede crear tablas temporales: `has_database_privilege(..., 'TEMP')` es `true` para `anon`) puede hacer que `FROM invitations` resuelva a su tabla falsa. Al nombrar `pg_temp` al final, `public` gana. Ver `fase-17-function-search-path/`.
+  - Migraciones de referencia: `fase-16-harden-rpc-grants/`, `fase-17-function-search-path/`.
 - **Resultados de server actions:** contrato canónico en `lib/errors.ts` (`ActionResult<T> = { success: true; data?: T } | { success: false; error; code }`).
   - Éxito: `return { success: true as const, data }`. Sin payload: `Promise<ActionResult<never>>`.
   - Fallo: `throw err('<AppErrorCode>', <detalle>, { userMessage })` y `return handleActionError(e, '<nombreAccion>')`. **No** devolver `{ success: false, error }` a mano: sin `code` el consumidor no puede clasificar.
