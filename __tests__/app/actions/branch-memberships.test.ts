@@ -74,6 +74,7 @@ import {
     removeUserFromBranchAction,
     switchActiveBranchAction,
 } from '../../../app/actions/branch-memberships'
+import { err } from '../../../lib/errors'
 
 type Chain = {
     select: jest.Mock
@@ -637,15 +638,16 @@ describe('app/actions/branch-memberships.ts (Fase 11 — Bloque B)', () => {
         it('rechaza con error si requireAuthContext lanza (no consulta auth ni DB)', async () => {
             // requireAuthContext ya unifica la validación de sesión + membrisía.
             // Si falla por falta de sesión, la acción aborta antes de tocar
-            // nada. NOTA: legacy compat de handleActionError no detecta
-            // Error('UNAUTHENTICATED') → 'UNKNOWN' (mismo patrón que
-            // major_expenses.test.ts:205 y users.test.ts:323-327).
-            mockRequireAuthContext.mockRejectedValueOnce(new Error('UNAUTHENTICATED'))
+            // nada y `handleActionError` clasifica el `code` que trae el
+            // AppError de la guardia.
+            mockRequireAuthContext.mockRejectedValueOnce(
+                err('UNAUTHENTICATED', 'requireAuthContext: no active session')
+            )
 
             const result = await switchActiveBranchAction(VALID_BRANCH_NORTE)
 
             expect(result.success).toBe(false)
-            expect(result.code).toBeTruthy()
+            expect(result.code).toBe('UNAUTHENTICATED')
             expect(mockUpdateUserById).not.toHaveBeenCalled()
             expect(mockFrom).not.toHaveBeenCalled()
         })

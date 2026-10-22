@@ -2,10 +2,12 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { HeartPulse, RefreshCw, CheckCircle2, AlertTriangle, XCircle } from 'lucide-react';
-import { getSystemHealth, type HealthCheck, type HealthStatus } from '../../app/actions/platform';
-import './Platform.css';
+import { getSystemHealth } from '../actions/platform';
+import type { HealthCheck, HealthStatus } from '../types';
+import { isFailure, isSuccess } from '../../../lib/errors';
+import './platform-admin.css';
 
-/** Los colores de cada estado viven en `Platform.css` (`.sh-tone-*`). */
+/** Los colores de cada estado viven en `platform-admin.css` (`.sh-tone-*`). */
 const STATUS_META: Record<HealthStatus, { icon: React.ReactNode; label: string }> = {
     ok: { icon: <CheckCircle2 size={20} />, label: 'Operativo' },
     warn: { icon: <AlertTriangle size={20} />, label: 'Atención' },
@@ -22,11 +24,11 @@ export default function SystemHealth() {
         setLoading(true);
         setError('');
         const res = await getSystemHealth();
-        if (res.success && res.checks) {
-            setChecks(res.checks);
+        if (isSuccess(res) && res.data) {
+            setChecks(res.data);
             setCheckedAt(new Date());
-        } else {
-            setError(res.error || 'No se pudo ejecutar el diagnóstico');
+        } else if (isFailure(res)) {
+            setError(res.error);
         }
         setLoading(false);
     }, []);

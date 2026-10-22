@@ -29,7 +29,7 @@ export interface PersistedPosSession {
     savedAt: number;
 }
 
-export type POSMode = 'cart' | 'expenses' | 'major';
+export type POSMode = 'cart' | 'expenses';
 export type PaymentMethod = 'CASH' | 'CARD' | 'BANK_TRANSFER' | 'CREDIT';
 export type TransferType = 'NEQUI' | 'DAVIPLATA' | 'BANCOLOMBIA' | 'OTHER' | 'QR';
 

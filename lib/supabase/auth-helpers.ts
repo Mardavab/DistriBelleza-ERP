@@ -1,6 +1,7 @@
 import { createClient } from './server'
 import { supabaseAdmin } from '../supabase'
 import { getActiveMembership, isPlatformUser } from './membership-queries'
+import { err } from '../errors'
 import type { AuthContext, UserRole } from './memberships'
 
 /**
@@ -35,7 +36,7 @@ export async function requireAuthContext(): Promise<AuthContext> {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-        throw new Error('UNAUTHENTICATED')
+        throw err('UNAUTHENTICATED', 'requireAuthContext: no active session')
     }
 
     const jwtCompanyId = user.app_metadata?.company_id as string | undefined
@@ -59,14 +60,17 @@ export async function requireAuthContext(): Promise<AuthContext> {
                 },
             }
         }
-        throw new Error('NO_COMPANY_CONTEXT')
+        throw err('NO_COMPANY_CONTEXT', 'requireAuthContext: JWT without company_id')
     }
 
     // Resolver membresía activa: prioridad JWT > default > primera.
     const membership = await getActiveMembership(user.id, jwtCompanyId)
 
     if (!membership) {
-        throw new Error('NO_MEMBERSHIP')
+        throw err(
+            'NO_MEMBERSHIP',
+            `requireAuthContext: no membership for user in company ${jwtCompanyId}`
+        )
     }
 
     // Defensa: si la membresión es de una empresa distinta a la del JWT,
@@ -87,15 +91,16 @@ export async function requireAuthContext(): Promise<AuthContext> {
 
 export function requireOwner(role: string) {
     if (role !== 'owner') {
-        throw new Error('FORBIDDEN: se requiere rol owner')
+        throw err('FORBIDDEN', `requireOwner: requires owner role, got '${role}'`)
     }
 }
 
 export async function requireRole(allowedRoles: string[]) {
     const ctx = await requireAuthContext()
     if (!allowedRoles.includes(ctx.role)) {
-        throw new Error(
-            `FORBIDDEN: se requiere uno de los roles [${allowedRoles.join(', ')}], pero el usuario tiene '${ctx.role}'`
+        throw err(
+            'FORBIDDEN',
+            `requireRole: requires one of [${allowedRoles.join(', ')}], got '${ctx.role}'`
         )
     }
     return ctx
@@ -119,7 +124,7 @@ export async function requirePlatformRole(allowedRoles: string[]) {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-        throw new Error('UNAUTHENTICATED')
+        throw err('UNAUTHENTICATED', 'requirePlatformRole: no active session')
     }
 
     const { data: profile, error: profileError } = await supabaseAdmin
@@ -129,11 +134,12 @@ export async function requirePlatformRole(allowedRoles: string[]) {
         .maybeSingle()
 
     if (profileError || !profile) {
-        throw new Error('NO_PROFILE')
+        throw err('NOT_FOUND', 'requirePlatformRole: profile not found')
     }
 
     if (!profile.is_platform_admin) {
-        throw new Error(
+        throw err(
+            'FORBIDDEN',
             `FORBIDDEN: se requiere cuenta de plataforma (is_platform_admin=true), pero el usuario no la tiene`
         )
     }
@@ -141,7 +147,8 @@ export async function requirePlatformRole(allowedRoles: string[]) {
     const role = 'technician' // Convencional: técnicos tienen rol 'technician' en el helper.
 
     if (!allowedRoles.includes(role)) {
-        throw new Error(
+        throw err(
+            'FORBIDDEN',
             `FORBIDDEN: se requiere uno de los roles [${allowedRoles.join(', ')}], pero el usuario tiene '${role}'`
         )
     }

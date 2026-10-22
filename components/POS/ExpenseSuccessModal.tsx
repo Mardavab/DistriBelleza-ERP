@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { CheckCircle, Receipt, Plus, X } from 'lucide-react';
-import ModalBase, { ModalButton } from '../UI/ModalBase';
+import ModalBase, { ModalButton } from '../../shared/ui/ModalBase';
 import { formatCurrency, formatDateTime } from '../../lib/format';
 
 /**

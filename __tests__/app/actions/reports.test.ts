@@ -61,6 +61,7 @@ import {
     getDashboardStats,
     getCommissionGoalFormatted,
 } from '../../../app/actions/reports'
+import { err } from '../../../lib/errors'
 
 type Chain = {
     select: jest.Mock
@@ -354,7 +355,7 @@ describe('app/actions/reports.ts — getFinancialReport (Fase 11 — Commit 4)',
 
         it('propaga NO_BRANCH_CONTEXT si el usuario no tiene sucursal', async () => {
             mockRequireBranchContext.mockRejectedValueOnce(
-                new Error('NO_BRANCH_CONTEXT')
+                err('NO_BRANCH_CONTEXT', 'requireBranchContext: no active branch for u-1')
             )
 
             const result = await getFinancialReport('2026-10-10', 'current')
@@ -447,7 +448,7 @@ describe('app/actions/reports.ts — getFinancialReport (Fase 11 — Commit 4)',
 
         it('requiere owner (manager NO puede ver consolidado)', async () => {
             mockRequireOwner.mockImplementationOnce(() => {
-                throw new Error('FORBIDDEN: se requiere rol owner')
+                throw err('FORBIDDEN', "requireOwner: requires owner role, got 'manager'")
             })
 
             const result = await getFinancialReport('2026-10-10', 'all')
@@ -640,7 +641,7 @@ describe('app/actions/reports.ts — getFinancialReport (Fase 11 — Commit 4)',
 
         it('requiere owner (manager NO puede consultar otra sucursal)', async () => {
             mockRequireOwner.mockImplementationOnce(() => {
-                throw new Error('FORBIDDEN: se requiere rol owner')
+                throw err('FORBIDDEN', "requireOwner: requires owner role, got 'manager'")
             })
 
             const result = await getFinancialReport('2026-10-10', VALID_BRANCH_NORTE)
@@ -730,7 +731,7 @@ describe('app/actions/reports.ts — getFinancialReport (Fase 11 — Commit 4)',
     describe('errores de autenticación', () => {
         it('propaga UNAUTHENTICATED si requireAuthContext falla', async () => {
             mockRequireAuthContext.mockRejectedValueOnce(
-                new Error('UNAUTHENTICATED')
+                err('UNAUTHENTICATED', 'requireAuthContext: no active session')
             )
 
             const result = await getFinancialReport('2026-10-10', 'current')
@@ -743,7 +744,7 @@ describe('app/actions/reports.ts — getFinancialReport (Fase 11 — Commit 4)',
 
         it('propaga NO_COMPANY_CONTEXT si el JWT no tiene company_id', async () => {
             mockRequireAuthContext.mockRejectedValueOnce(
-                new Error('NO_COMPANY_CONTEXT')
+                err('NO_COMPANY_CONTEXT', 'requireAuthContext: JWT without company_id')
             )
 
             const result = await getFinancialReport('2026-10-10', 'all')
@@ -883,7 +884,7 @@ describe('app/actions/reports.ts — getDashboardStats', () => {
 
     it('devuelve null si el reporte falló', async () => {
         mockRequireBranchContext.mockRejectedValueOnce(
-            new Error('NO_BRANCH_CONTEXT')
+            err('NO_BRANCH_CONTEXT', 'requireBranchContext: no active branch for u-1')
         )
 
         const result = await getDashboardStats()

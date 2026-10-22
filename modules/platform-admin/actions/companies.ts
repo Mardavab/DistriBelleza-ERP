@@ -1,8 +1,8 @@
 'use server'
 
-import { supabaseAdmin } from '../../lib/supabase'
-import { requirePlatformRole } from '../../lib/supabase/auth-helpers'
-import { handleActionError, err } from '../../lib/errors'
+import { supabaseAdmin } from '../../../lib/supabase'
+import { requirePlatformRole } from '../../../lib/supabase/auth-helpers'
+import { handleActionError, err, type ActionResult } from '../../../lib/errors'
 
 /**
  * Crea una nueva empresa (tenant) con su configuración inicial.
@@ -26,7 +26,7 @@ export async function createCompany(payload: {
     currency?: string
     timezone?: string
     initialOwnerEmail?: string
-}) {
+}): Promise<ActionResult<{ company_id: string; invitation_url: string | null }>> {
     try {
         // Las cuentas de plataforma no tienen company_id: se usa
         // requirePlatformRole en lugar de requireRole.

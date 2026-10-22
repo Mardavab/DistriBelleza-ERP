@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { Building2, Plus, AlertCircle } from 'lucide-react';
 import CompanyList from './CompanyList';
 import CreateCompanyModal from './CreateCompanyModal';
+import './platform-admin.css';
 
 /**
  * Panel de gestión de empresas del administrador de plataforma.

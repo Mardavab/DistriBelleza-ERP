@@ -1,7 +1,9 @@
 'use server'
 
-import { supabaseAdmin } from '../../lib/supabase'
-import { requirePlatformRole } from '../../lib/supabase/auth-helpers'
+import { supabaseAdmin } from '../../../lib/supabase'
+import { requirePlatformRole } from '../../../lib/supabase/auth-helpers'
+import { err, handleActionError, type ActionResult } from '../../../lib/errors'
+import type { CompanyActivity, HealthCheck } from '../types'
 
 /**
  * ACCIONES DE LA CONSOLA DE PLATAFORMA
@@ -13,30 +15,6 @@ import { requirePlatformRole } from '../../lib/supabase/auth-helpers'
  */
 
 const PLATFORM_ROLES = ['technician']
-
-export type HealthStatus = 'ok' | 'warn' | 'error'
-
-export interface HealthCheck {
-    id: string
-    label: string
-    status: HealthStatus
-    detail: string
-    meta?: string
-}
-
-export interface CompanyActivity {
-    id: string
-    slug: string
-    trade_name: string | null
-    legal_name: string
-    active: boolean
-    deactivation_reason: string | null
-    deactivated_at: string | null
-    created_at: string
-    user_count: number
-    last_sale_at: string | null
-    sales_total: number
-}
 
 /** Ejecuta una promesa con timeout para que un servicio caído no
  *  deje la consola colgada. */
@@ -56,11 +34,7 @@ async function withTimeout<T>(promise: PromiseLike<T>, ms: number): Promise<T> {
  * Chequeos de salud del sistema. Sin infraestructura nueva:
  * consulta directa a Supabase y al print service local.
  */
-export async function getSystemHealth(): Promise<{
-    success: boolean
-    checks?: HealthCheck[]
-    error?: string
-}> {
+export async function getSystemHealth(): Promise<ActionResult<HealthCheck[]>> {
     try {
         await requirePlatformRole(PLATFORM_ROLES)
 
@@ -88,14 +62,14 @@ export async function getSystemHealth(): Promise<{
                 detail: 'Conexión activa',
                 meta: `${latency} ms`,
             })
-        } catch (err: any) {
+        } catch (dbFailure: any) {
             checks.push({
                 id: 'database',
                 label: 'Base de datos',
                 status: 'error',
-                detail: err?.message === 'timeout 5000ms'
+                detail: dbFailure?.message === 'timeout 5000ms'
                     ? 'Sin respuesta en 5 segundos'
-                    : (err?.message || 'No se pudo conectar'),
+                    : (dbFailure?.message || 'No se pudo conectar'),
             })
         }
 
@@ -108,7 +82,7 @@ export async function getSystemHealth(): Promise<{
         // cliente. Marcamos este check como informativo ("ok" siempre) para
         // que la consola de plataforma no muestre falsos errores.
         checks.push({
-            id: 'print-service',
+            id: 'printing',
             label: 'Impresión (WebUSB local)',
             status: 'ok',
             detail: 'La impresión es local vía WebUSB (Chrome/Edge).',
@@ -160,9 +134,9 @@ export async function getSystemHealth(): Promise<{
                 : 'Ninguna cuenta puede administrar la plataforma',
         })
 
-        return { success: true, checks }
-    } catch (err: any) {
-        return { success: false, error: err?.message || 'No se pudo ejecutar el diagnóstico' }
+        return { success: true as const, data: checks }
+    } catch (caught) {
+        return handleActionError(caught, 'getSystemHealth')
     }
 }
 
@@ -171,11 +145,7 @@ export async function getSystemHealth(): Promise<{
  * Sin filtro `created_by`: el administrador de plataforma necesita ver
  * la totalidad de los tenants, no solo los que él creó.
  */
-export async function getAllCompanies(): Promise<{
-    success: boolean
-    data?: CompanyActivity[]
-    error?: string
-}> {
+export async function getAllCompanies(): Promise<ActionResult<CompanyActivity[]>> {
     try {
         await requirePlatformRole(PLATFORM_ROLES)
 
@@ -184,8 +154,8 @@ export async function getAllCompanies(): Promise<{
             .select('id, slug, legal_name, trade_name, active, deactivation_reason, deactivated_at, created_at')
             .order('created_at', { ascending: false })
 
-        if (error) throw error
-        if (!companies?.length) return { success: true, data: [] }
+        if (error) throw err('EXTERNAL', `companies.list: ${error.message}`, { cause: error })
+        if (!companies?.length) return { success: true as const, data: [] }
 
         const ids = companies.map(c => c.id)
 
@@ -234,9 +204,9 @@ export async function getAllCompanies(): Promise<{
             }
         })
 
-        return { success: true, data }
-    } catch (err: any) {
-        return { success: false, error: err?.message || 'No se pudieron cargar las empresas' }
+        return { success: true as const, data }
+    } catch (caught) {
+        return handleActionError(caught, 'getAllCompanies')
     }
 }
 
@@ -254,19 +224,20 @@ export async function setCompanyActive(
     companyId: string,
     active: boolean,
     reason?: string
-): Promise<{ success: boolean; error?: string }> {
+): Promise<ActionResult<never>> {
     try {
         await requirePlatformRole(PLATFORM_ROLES)
 
         if (typeof companyId !== 'string' || !UUID_RE.test(companyId)) {
-            return { success: false, error: 'Identificador de empresa inválido' }
+            throw err('VALIDATION', 'invalid company id', {
+                userMessage: 'Identificador de empresa inválido',
+            })
         }
 
         if (reason && reason.length > MAX_REASON_LENGTH) {
-            return {
-                success: false,
-                error: `El motivo no puede superar ${MAX_REASON_LENGTH} caracteres`,
-            }
+            throw err('VALIDATION', 'deactivation reason too long', {
+                userMessage: `El motivo no puede superar ${MAX_REASON_LENGTH} caracteres`,
+            })
         }
 
         const { data: company } = await supabaseAdmin
@@ -276,11 +247,13 @@ export async function setCompanyActive(
             .maybeSingle()
 
         if (!company) {
-            return { success: false, error: 'La empresa no existe' }
+            throw err('NOT_FOUND', `company not found: ${companyId}`, {
+                userMessage: 'La empresa no existe',
+            })
         }
 
         if (company.active === active) {
-            return { success: true } // sin cambios
+            return { success: true as const } // sin cambios
         }
 
         const cleanReason = reason?.trim()
@@ -295,15 +268,15 @@ export async function setCompanyActive(
             })
             .eq('id', companyId)
 
-        if (error) throw error
+        if (error) throw err('EXTERNAL', `companies.update: ${error.message}`, { cause: error })
 
         console.log(
             `[platform] Empresa ${companyId} ${active ? 'activada' : 'desactivada'}` +
             (active ? '' : ` — motivo: ${cleanReason}`)
         )
 
-        return { success: true }
-    } catch (err: any) {
-        return { success: false, error: err?.message || 'No se pudo actualizar la empresa' }
+        return { success: true as const }
+    } catch (caught) {
+        return handleActionError(caught, 'setCompanyActive')
     }
 }

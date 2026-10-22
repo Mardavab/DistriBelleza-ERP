@@ -7,7 +7,7 @@ import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday } from '../../lib/timezone';
-import { handleActionError, err, warnSilently, isSuccess, isFailure, type AppErrorCode } from '../../lib/errors';
+import { handleActionError, err, warnSilently, isSuccess, isFailure, type ActionFailure } from '../../lib/errors';
 
 export type CashSessionWithTotals = {
   id: string;
@@ -20,9 +20,10 @@ export type CashSessionWithTotals = {
   totalSold: number;
 };
 
-export type ActionFailure = { success: false; error: string; code: AppErrorCode };
-export type ActionSuccess<T = unknown> = { success: true; data?: T };
-export type ActionResult<T = unknown> = ActionSuccess<T> | ActionFailure;
+// Tipos de resultado de server action: definidos en lib/errors.ts junto a
+// handleActionError/isFailure. Se re-exportan aquí para no romper a los
+// consumidores que ya los importan desde este módulo.
+export type { ActionFailure, ActionSuccess, ActionResult } from '../../lib/errors';
 
 // Re-export del helper genérico para narrowing discriminante en componentes.
 export { isSuccess, isFailure };

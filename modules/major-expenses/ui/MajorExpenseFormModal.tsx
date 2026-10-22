@@ -1,12 +1,13 @@
 'use client'
 
 import React, { useState } from 'react';
-import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../UI/ModalBase';
-import CustomSelect from '../UI/CustomSelect';
-import { parseCurrencyInput } from '../../lib/format';
-import { addMajorExpense } from '../../app/actions/major_expenses';
-import { isFailure } from '../../lib/errors';
+import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../../../shared/ui/ModalBase';
+import CustomSelect from '../../../shared/ui/CustomSelect';
+import { parseCurrencyInput } from '../../../lib/format';
+import { addMajorExpense } from '../actions/major_expenses';
+import { isFailure } from '../../../lib/errors';
 import type { MajorExpenseCategory } from './categories';
+import './major-expenses.css';
 
 interface Props {
     onClose: () => void;

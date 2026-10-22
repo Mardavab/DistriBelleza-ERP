@@ -18,7 +18,11 @@ Este archivo define reglas y contexto para todos los agentes/asistentes que trab
 - **Framework:** Next.js `^14.1.0` con **App Router** (React `^18.2.0`)
 - **Build:** SWC (Next.js). Config en `next.config.js`
 - **Gestor de paquetes:** **npm** (`package-lock.json` presente)
-- **Estructura:** Sin `src/`. Código en `app/`, `components/`, `lib/`, etc.
+- **Estructura:** Sin `src/`. Código en `app/`, `components/`, `lib/`, `modules/`, `shared/`, etc.
+  - `modules/<dominio>/` — módulos de negocio independientes (`platform-admin`, `major-expenses`, `user-management`). Cada uno con `ui/`, `actions/`, `types.ts` e `index.ts` (superficie pública). Un módulo es dueño de sus server actions **solo** cuando ningún otro dominio las consume; si se comparten, se quedan en `app/actions/`.
+  - `shared/ui/` — primitivos de UI compartidos entre módulos (`ModalBase`, `CustomSelect`). **Nunca** mover un primitivo dentro de un módulo.
+  - `components/` — componentes de feature no modularizados todavía.
+  - Los módulos de negocio **no pueden importarse entre sí** (lo frena ESLint `no-restricted-imports` en `eslint.config.mjs`, lista `BUSINESS_MODULES`).
 - **Base de datos:** Supabase (Postgres 17)
 
 ## 3. Comandos (build, test, lint, typecheck)
@@ -56,6 +60,12 @@ Este archivo define reglas y contexto para todos los agentes/asistentes que trab
   - Después, según la acción: `requireOwner(ctx.role)` (solo owners) o `requireRole(ctx.role, ['owner', 'manager'])` (owners + managers).
   - **NUNCA** leer `profiles.role` directamente. El rol vive en `company_memberships.role` (multi-empresa).
   - **NUNCA** detectar platform admin con `role = 'technician'`. Usar `profiles.is_platform_admin = true` (vía `isPlatformUser(userId)` o `requirePlatformRole(['technician'])`).
+- **Resultados de server actions:** contrato canónico en `lib/errors.ts` (`ActionResult<T> = { success: true; data?: T } | { success: false; error; code }`).
+  - Éxito: `return { success: true as const, data }`. Sin payload: `Promise<ActionResult<never>>`.
+  - Fallo: `throw err('<AppErrorCode>', <detalle>, { userMessage })` y `return handleActionError(e, '<nombreAccion>')`. **No** devolver `{ success: false, error }` a mano: sin `code` el consumidor no puede clasificar.
+  - Los helpers de guardia (`requireAuthContext`, `requireOwner`, `requireRole`, `requirePlatformRole`, `requireBranchContext`, `getCurrentCompanyId`) deben lanzar `AppError` vía `err()` para que `handleActionError` clasifique el `code`. Si agregas uno nuevo, no lances `Error` plano.
+  - En componentes cliente usar los guards `isSuccess(res)` / `isFailure(res)` de `lib/errors` (narrowing de la unión discriminada), no `res.success && res.data`.
+- **CSS por módulo:** un módulo con stylesheet propio hace que cada `.tsx` de su `ui/` lo importe (`import './platform-admin.css'`). Los CSS son globales (no hay CSS Modules en este repo), así que el import evita que los estilos desaparezcan con code-splitting. `user-management` no lleva stylesheet: sus clases globales viven en `app/globals.css`.
 - **Estilo:** TypeScript no-strict, App Router. No añadir comentarios innecesarios. Seguir patrones existentes en el código.
 
 ## 6. Estado del repositorio

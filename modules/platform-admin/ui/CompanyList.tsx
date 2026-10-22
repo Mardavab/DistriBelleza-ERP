@@ -2,11 +2,13 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import { Ban, RotateCcw, Globe } from 'lucide-react';
-import { getAllCompanies, setCompanyActive, type CompanyActivity } from '../../app/actions/platform';
-import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../UI/ModalBase';
-import { formatCurrency } from '../../lib/format';
-import { isIdleCompany, formatLastSale } from '../../lib/tenant-usage';
-import './Platform.css';
+import { getAllCompanies, setCompanyActive } from '../actions/platform';
+import type { CompanyActivity } from '../types';
+import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../../../shared/ui/ModalBase';
+import { formatCurrency } from '../../../lib/format';
+import { isIdleCompany, formatLastSale } from '../../../lib/tenant-usage';
+import { isFailure, isSuccess } from '../../../lib/errors';
+import './platform-admin.css';
 
 interface Props {
     /**
@@ -49,10 +51,10 @@ export default function CompanyList({
         setOwnLoading(true);
         setOwnError('');
         const res = await getAllCompanies();
-        if (res.success && res.data) {
+        if (isSuccess(res) && res.data) {
             setOwnCompanies(res.data);
-        } else {
-            setOwnError(res.error || 'No se pudieron cargar las empresas');
+        } else if (isFailure(res)) {
+            setOwnError(res.error);
         }
         setOwnLoading(false);
     }, []);
@@ -73,11 +75,11 @@ export default function CompanyList({
     const handleActivate = async (company: CompanyActivity) => {
         setRowBusy(company.id);
         const res = await setCompanyActive(company.id, true);
-        if (res.success) {
+        if (isSuccess(res)) {
             await refresh();
         } else {
             if (isControlled) await onRefresh?.();
-            else setOwnError(res.error || 'No se pudo activar la empresa');
+            else if (isFailure(res)) setOwnError(res.error);
         }
         setRowBusy(null);
     };
@@ -87,13 +89,13 @@ export default function CompanyList({
         setSaving(true);
         const res = await setCompanyActive(pendingDeactivate.id, false, reason);
         setSaving(false);
-        if (res.success) {
+        if (isSuccess(res)) {
             setPendingDeactivate(null);
             setReason('');
             await refresh();
         } else {
             if (isControlled) await onRefresh?.();
-            else setOwnError(res.error || 'No se pudo desactivar la empresa');
+            else if (isFailure(res)) setOwnError(res.error);
         }
     };
 

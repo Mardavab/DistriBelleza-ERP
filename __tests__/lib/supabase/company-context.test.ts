@@ -44,7 +44,7 @@ describe('company-context.ts (Fase 10)', () => {
         it('lanza UNAUTHENTICATED si no hay usuario (auth.getUser devuelve null)', async () => {
             mockAuthGetUser.mockResolvedValue({ data: { user: null }, error: null })
 
-            await expect(getCurrentCompanyId()).rejects.toThrow('UNAUTHENTICATED')
+            await expect(getCurrentCompanyId()).rejects.toMatchObject({ code: 'UNAUTHENTICATED' })
             // Importante: NO debe llegar a consultar membresías / platform admin
             expect(mockIsPlatformUser).not.toHaveBeenCalled()
             expect(mockGetActiveMembership).not.toHaveBeenCalled()
@@ -56,7 +56,7 @@ describe('company-context.ts (Fase 10)', () => {
                 error: { message: 'session missing' },
             })
 
-            await expect(getCurrentCompanyId()).rejects.toThrow('UNAUTHENTICATED')
+            await expect(getCurrentCompanyId()).rejects.toMatchObject({ code: 'UNAUTHENTICATED' })
             expect(mockIsPlatformUser).not.toHaveBeenCalled()
         })
     })

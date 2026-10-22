@@ -10,7 +10,9 @@
  *     `syncBranchIdToJwtIfMissing`.
  *   - getCurrentBranchIdSafe: versión silenciosa que nunca lanza.
  *   - requireBranchContext: versión estricta para server actions
- *     operacionales. Lanza 'UNAUTHENTICATED' o 'NO_BRANCH_CONTEXT'.
+ *     operacionales. Lanza `AppError` (vía `err()`) con code
+ *     'UNAUTHENTICATED' o 'NO_BRANCH_CONTEXT', para que
+ *     `handleActionError` clasifique el resultado.
  *     Tampoco dispara side-effects.
  *   - getUserDefaultBranchId: helper para resolver el default sin pasar
  *     por la lógica JWT.
@@ -519,7 +521,7 @@ describe('branch-context.ts (Fase 11 — multi-sucursal)', () => {
         it('lanza UNAUTHENTICATED si no hay usuario', async () => {
             mockGetUser.mockResolvedValue({ data: { user: null }, error: null })
 
-            await expect(requireBranchContext()).rejects.toThrow('UNAUTHENTICATED')
+            await expect(requireBranchContext()).rejects.toMatchObject({ code: 'UNAUTHENTICATED' })
             // Importante: NO debe llegar a isPlatformUser / isUserInBranch
             expect(mockIsPlatformUser).not.toHaveBeenCalled()
             expect(mockIsUserInBranch).not.toHaveBeenCalled()
@@ -531,7 +533,7 @@ describe('branch-context.ts (Fase 11 — multi-sucursal)', () => {
                 error: { message: 'session missing' },
             })
 
-            await expect(requireBranchContext()).rejects.toThrow('UNAUTHENTICATED')
+            await expect(requireBranchContext()).rejects.toMatchObject({ code: 'UNAUTHENTICATED' })
         })
     })
 
@@ -548,7 +550,7 @@ describe('branch-context.ts (Fase 11 — multi-sucursal)', () => {
             })
             mockIsPlatformUser.mockResolvedValue(true)
 
-            await expect(requireBranchContext()).rejects.toThrow('NO_BRANCH_CONTEXT')
+            await expect(requireBranchContext()).rejects.toMatchObject({ code: 'NO_BRANCH_CONTEXT' })
             // Platform admin → no llega a isUserInBranch
             expect(mockIsUserInBranch).not.toHaveBeenCalled()
         })
@@ -608,7 +610,7 @@ describe('branch-context.ts (Fase 11 — multi-sucursal)', () => {
             // asigne una sucursal.
             mockGetActiveBranch.mockResolvedValue(null)
 
-            await expect(requireBranchContext()).rejects.toThrow('NO_BRANCH_CONTEXT')
+            await expect(requireBranchContext()).rejects.toMatchObject({ code: 'NO_BRANCH_CONTEXT' })
             expect(mockIsUserInBranch).not.toHaveBeenCalled()
         })
     })
@@ -664,7 +666,7 @@ describe('branch-context.ts (Fase 11 — multi-sucursal)', () => {
             mockIsUserInBranch.mockResolvedValue(false)
             mockGetActiveBranch.mockResolvedValue(null)
 
-            await expect(requireBranchContext()).rejects.toThrow('NO_BRANCH_CONTEXT')
+            await expect(requireBranchContext()).rejects.toMatchObject({ code: 'NO_BRANCH_CONTEXT' })
             expect(consoleWarnSpy).toHaveBeenCalledWith(
                 expect.stringContaining('sin membrisía')
             )

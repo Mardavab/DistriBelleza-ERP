@@ -1,5 +1,6 @@
 import { createClient } from './server'
 import { getActiveMembership, isPlatformUser } from './membership-queries'
+import { err } from '../errors'
 
 /**
  * Obtiene el company_id del tenant activo del usuario.
@@ -23,7 +24,7 @@ export async function getCurrentCompanyId(): Promise<string | null> {
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-        throw new Error('UNAUTHENTICATED')
+        throw err('UNAUTHENTICATED', 'getCurrentCompanyId: no active session')
     }
 
     // Cuentas de plataforma: no tienen empresa.

@@ -42,6 +42,7 @@ jest.mock('next/cache', () => ({
 }))
 
 import { getUsers, createUser } from '../../../app/actions/users'
+import { err } from '../../../lib/errors'
 
 type Chain = {
     select: jest.Mock
@@ -342,17 +343,14 @@ describe('app/actions/users.ts — getUsers (Fase 10.5)', () => {
     })
 
     it('no consulta nada si requireAuthContext falla (UNAUTHENTICATED)', async () => {
-        mockRequireAuthContext.mockRejectedValueOnce(new Error('UNAUTHENTICATED'))
+        mockRequireAuthContext.mockRejectedValueOnce(
+            err('UNAUTHENTICATED', 'requireAuthContext: no active session')
+        )
 
         const result = await getUsers()
 
         expect(result.success).toBe(false)
-        // NOTA: `requireAuthContext` lanza `new Error('UNAUTHENTICATED')`,
-        // no un string. La compat legacy de handleActionError solo detecta
-        // strings (`typeof error === 'string'`), así que actualmente el
-        // código se clasifica como 'UNKNOWN'. Este test verifica que NO se
-        // consulta la base (lo importante) y que la respuesta es failure.
-        expect(result.code).toBeTruthy()
+        expect(result.code).toBe('UNAUTHENTICATED')
         expect(mockFrom).not.toHaveBeenCalled()
     })
 
@@ -372,15 +370,13 @@ describe('app/actions/users.ts — getUsers (Fase 10.5)', () => {
             },
         })
         mockRequireOwner.mockImplementationOnce(() => {
-            throw new Error('FORBIDDEN: se requiere rol owner')
+            throw err('FORBIDDEN', "requireOwner: requires owner role, got 'manager'")
         })
 
         const result = await getUsers()
 
         expect(result.success).toBe(false)
-        // El código clasifica el error legacy (new Error string) como 'UNKNOWN'.
-        // Lo importante: NO se ejecutó la query.
-        expect(result.code).toBeTruthy()
+        expect(result.code).toBe('FORBIDDEN')
         expect(mockFrom).not.toHaveBeenCalled()
         expect(mockRequireOwner).toHaveBeenCalledWith('manager')
     })

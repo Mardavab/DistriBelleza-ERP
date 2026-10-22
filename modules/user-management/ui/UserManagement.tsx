@@ -6,11 +6,11 @@ import {
     UserCircle, AlertCircle, Check, X, RefreshCcw,
     Link2, Copy, Clock, Store
 } from 'lucide-react';
-import { getUsers, createUser, updateUser, deleteUser } from '../../app/actions/users';
-import { listBranchesAction } from '../../app/actions/branches';
-import { isFailure, isSuccess } from '../../lib/errors';
-import CustomSelect from './CustomSelect';
-import type { Branch } from '../../lib/supabase/branches';
+import { getUsers, createUser, updateUser, deleteUser } from '../../../app/actions/users';
+import { listBranchesAction } from '../../../app/actions/branches';
+import { isFailure, isSuccess } from '../../../lib/errors';
+import CustomSelect from '../../../shared/ui/CustomSelect';
+import type { Branch } from '../../../lib/supabase/branches';
 
 interface UserManagementProps {
     currentUserRole: string;

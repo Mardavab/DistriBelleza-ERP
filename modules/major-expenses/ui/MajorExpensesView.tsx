@@ -2,11 +2,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { Building2, Trash2, Plus } from 'lucide-react';
-import { getMajorExpenses, deleteMajorExpense } from '../../app/actions/major_expenses';
-import { formatCurrency } from '../../lib/format';
+import { getMajorExpenses, deleteMajorExpense } from '../actions/major_expenses';
+import { formatCurrency } from '../../../lib/format';
 import MajorExpenseFormModal from './MajorExpenseFormModal';
 import { CATEGORY_CONFIG, CATEGORY_ENTRIES, getCategory, type MajorExpenseCategory } from './categories';
-import './MajorExpenses.css';
+import './major-expenses.css';
 
 export default function MajorExpensesView() {
     const [expenses, setExpenses] = useState<any[]>([]);

@@ -1,6 +1,6 @@
 'use client'
 
-import UserManagement from '../../../components/UI/UserManagement';
+import { UserManagement } from '../../../modules/user-management';
 import { useAppProfile } from '../../../components/Dashboard/AppShell';
 
 export default function ConfiguracionPage() {

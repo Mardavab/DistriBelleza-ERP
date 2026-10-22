@@ -1,5 +1,5 @@
 /**
- * Tests para app/actions/major_expenses.ts (Fase 10 — multi-empresa + Fase 11 — multi-sucursal).
+ * Tests para modules/major-expenses/actions/major_expenses.ts (Fase 10 — multi-empresa + Fase 11 — multi-sucursal).
  *
  * Cubre el refactor del Bloque A (Fase 10) y del Bloque C (Fase 11):
  *   - addMajorExpense y deleteMajorExpense usan requireAuthContext + requireOwner
@@ -35,7 +35,8 @@ jest.mock('next/cache', () => ({
     revalidatePath: jest.fn(),
 }))
 
-import { addMajorExpense, deleteMajorExpense } from '../../../app/actions/major_expenses'
+import { getMajorExpenses, addMajorExpense, deleteMajorExpense } from '../../../modules/major-expenses/actions/major_expenses'
+import { err } from '../../../lib/errors'
 
 type Chain = {
     select: jest.Mock
@@ -61,7 +62,7 @@ function makeBuilder(returnValue: { data?: unknown; error?: unknown }) {
     return b as Chain
 }
 
-describe('app/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
+describe('modules/major-expenses/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
     let consoleErrorSpy: jest.SpyInstance
     let consoleWarnSpy: jest.SpyInstance
 
@@ -191,17 +192,14 @@ describe('app/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
                 },
             })
             mockRequireOwner.mockImplementationOnce(() => {
-                throw new Error('FORBIDDEN: se requiere rol owner')
+                throw err('FORBIDDEN', "requireOwner: requires owner role, got 'manager'")
             })
 
             const result = await addMajorExpense('cat', 'desc', 1, '2026-05-01', null)
 
             expect(mockRequireOwner).toHaveBeenCalledWith('manager')
             expect(result.success).toBe(false)
-            // El código actual clasifica esto como UNKNOWN porque la compat
-            // legacy no detecta `new Error('FORBIDDEN: ...')` (no matchea /unauthor/).
-            // Lo importante: NO se ejecutó la query y el resultado es failure.
-            expect(result.code).toBeTruthy()
+            expect(result.code).toBe('FORBIDDEN')
             expect(mockFrom).not.toHaveBeenCalled()
             // FASE 11: si requireAuthContext/requireOwner falla, NO se llega
             // a llamar requireBranchContext.
@@ -209,13 +207,14 @@ describe('app/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
         })
 
         it('rechaza con UNAUTHENTICATED si requireAuthContext falla', async () => {
-            mockRequireAuthContext.mockRejectedValueOnce(new Error('UNAUTHENTICATED'))
+            mockRequireAuthContext.mockRejectedValueOnce(
+                err('UNAUTHENTICATED', 'requireAuthContext: no active session')
+            )
 
             const result = await addMajorExpense('cat', 'desc', 1, '2026-05-01', null)
 
             expect(result.success).toBe(false)
-            // NOTA: legacy compat no detecta Error('UNAUTHENTICATED') → 'UNKNOWN'.
-            expect(result.code).toBeTruthy()
+            expect(result.code).toBe('UNAUTHENTICATED')
             expect(mockFrom).not.toHaveBeenCalled()
             expect(mockRequireOwner).not.toHaveBeenCalled()
             expect(mockRequireBranchContext).not.toHaveBeenCalled()
@@ -225,16 +224,13 @@ describe('app/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
             // FASE 11: el owner puede no tener branch_membership (caso edge
             // de un owner recién creado sin sucursal asignada).
             mockRequireBranchContext.mockRejectedValueOnce(
-                new Error('NO_BRANCH_CONTEXT')
+                err('NO_BRANCH_CONTEXT', 'requireBranchContext: no active branch for owner-1')
             )
 
             const result = await addMajorExpense('cat', 'desc', 1, '2026-05-01', null)
 
             expect(result.success).toBe(false)
-            // NOTA: legacy compat en handleActionError NO detecta
-            // `new Error('NO_BRANCH_CONTEXT')` (solo strings thrown).
-            // Clasifica como UNKNOWN. Lo importante: NO se ejecutó la query.
-            expect(result.code).toBeTruthy()
+            expect(result.code).toBe('NO_BRANCH_CONTEXT')
             expect(mockFrom).not.toHaveBeenCalled()
         })
 
@@ -325,29 +321,26 @@ describe('app/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
                 },
             })
             mockRequireOwner.mockImplementationOnce(() => {
-                throw new Error('FORBIDDEN: se requiere rol owner')
+                throw err('FORBIDDEN', "requireOwner: requires owner role, got 'technician'")
             })
 
             const result = await deleteMajorExpense('any')
 
             expect(result.success).toBe(false)
-            expect(result.code).toBeTruthy()
+            expect(result.code).toBe('FORBIDDEN')
             expect(mockFrom).not.toHaveBeenCalled()
             expect(mockRequireBranchContext).not.toHaveBeenCalled()
         })
 
         it('rechaza con NO_BRANCH_CONTEXT si el usuario no tiene sucursal activa', async () => {
             mockRequireBranchContext.mockRejectedValueOnce(
-                new Error('NO_BRANCH_CONTEXT')
+                err('NO_BRANCH_CONTEXT', 'requireBranchContext: no active branch for owner-1')
             )
 
             const result = await deleteMajorExpense('expense-uuid-1')
 
             expect(result.success).toBe(false)
-            // NOTA: legacy compat en handleActionError NO detecta
-            // `new Error('NO_BRANCH_CONTEXT')` (solo strings thrown).
-            // Clasifica como UNKNOWN. Lo importante: NO se ejecutó la query.
-            expect(result.code).toBeTruthy()
+            expect(result.code).toBe('NO_BRANCH_CONTEXT')
             expect(mockFrom).not.toHaveBeenCalled()
         })
 
@@ -375,6 +368,132 @@ describe('app/actions/major_expenses.ts (Fase 10 + Fase 11 Bloque C)', () => {
 
             expect(result.success).toBe(false)
             expect(result.code).toBe('EXTERNAL')
+        })
+    })
+
+    describe('getMajorExpenses', () => {
+        it('usa requireBranchContext y filtra por branch_id (Fase 11)', async () => {
+            const eqCalls: Array<[string, unknown]> = []
+            const orderCalls: Array<[string, unknown]> = []
+            mockFrom.mockImplementation((table: string) => {
+                if (table === 'major_expenses') {
+                    return {
+                        select: jest.fn().mockReturnValue({
+                            eq: jest.fn().mockImplementation((col: string, val: unknown) => {
+                                eqCalls.push([col, val])
+                                return {
+                                    order: jest.fn().mockImplementation((col2: string, opts: unknown) => {
+                                        orderCalls.push([col2, opts])
+                                        return {
+                                            then: (onFulfilled: (v: unknown) => unknown) =>
+                                                onFulfilled({ data: [], error: null }),
+                                        }
+                                    }),
+                                }
+                            }),
+                        }),
+                    }
+                }
+            })
+
+            await getMajorExpenses()
+
+            expect(mockRequireBranchContext).toHaveBeenCalledTimes(1)
+            expect(mockFrom).toHaveBeenCalledWith('major_expenses')
+            expect(eqCalls).toEqual([['branch_id', 'b-1']])
+            expect(orderCalls).toEqual([['expense_date', { ascending: false }]])
+        })
+
+        it('NO llama requireAuthContext ni requireOwner (solo lectura)', async () => {
+            mockFrom.mockImplementation((table: string) => {
+                if (table === 'major_expenses') {
+                    return {
+                        select: jest.fn().mockReturnValue({
+                            eq: jest.fn().mockReturnValue({
+                                order: jest.fn().mockReturnValue({
+                                    then: (onFulfilled: (v: unknown) => unknown) =>
+                                        onFulfilled({ data: [], error: null }),
+                                }),
+                            }),
+                        }),
+                    }
+                }
+            })
+
+            await getMajorExpenses()
+
+            expect(mockRequireAuthContext).not.toHaveBeenCalled()
+            expect(mockRequireOwner).not.toHaveBeenCalled()
+        })
+
+        it('devuelve los gastos de la sucursal activa', async () => {
+            const rows = [
+                {
+                    id: 'exp-1',
+                    company_id: 'c-1',
+                    branch_id: 'b-1',
+                    category: 'rent',
+                    description: 'arriendo',
+                    amount: 500000,
+                    expense_date: '2026-05-01',
+                },
+            ]
+            mockFrom.mockImplementation((table: string) => {
+                if (table === 'major_expenses') {
+                    return {
+                        select: jest.fn().mockReturnValue({
+                            eq: jest.fn().mockReturnValue({
+                                order: jest.fn().mockReturnValue({
+                                    then: (onFulfilled: (v: unknown) => unknown) =>
+                                        onFulfilled({ data: rows, error: null }),
+                                }),
+                            }),
+                        }),
+                    }
+                }
+            })
+
+            const result = await getMajorExpenses()
+
+            expect(result.success).toBe(true)
+            expect(result.data).toEqual(rows)
+        })
+
+        it('devuelve EXTERNAL si la query falla', async () => {
+            mockFrom.mockImplementation((table: string) => {
+                if (table === 'major_expenses') {
+                    return {
+                        select: jest.fn().mockReturnValue({
+                            eq: jest.fn().mockReturnValue({
+                                order: jest.fn().mockReturnValue({
+                                    then: (onFulfilled: (v: unknown) => unknown) =>
+                                        onFulfilled({
+                                            data: null,
+                                            error: { message: 'permission denied' },
+                                        }),
+                                }),
+                            }),
+                        }),
+                    }
+                }
+            })
+
+            const result = await getMajorExpenses()
+
+            expect(result.success).toBe(false)
+            expect(result.code).toBe('EXTERNAL')
+        })
+
+        it('rechaza si el usuario no tiene sucursal activa', async () => {
+            mockRequireBranchContext.mockRejectedValueOnce(
+                err('NO_BRANCH_CONTEXT', 'requireBranchContext: no active branch for owner-1')
+            )
+
+            const result = await getMajorExpenses()
+
+            expect(result.success).toBe(false)
+            expect(result.code).toBe('NO_BRANCH_CONTEXT')
+            expect(mockFrom).not.toHaveBeenCalled()
         })
     })
 })

@@ -2,10 +2,11 @@
 
 import React, { useState } from 'react';
 import { Plus, Link2, Copy, Check, AlertCircle } from 'lucide-react';
-import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../UI/ModalBase';
-import { createCompany } from '../../app/actions/companies';
-import { slugify } from '../../lib/slug';
-import { isFailure } from '../../lib/errors';
+import ModalBase, { ModalHeader, ModalBody, ModalFooter, ModalButton } from '../../../shared/ui/ModalBase';
+import { createCompany } from '../actions/companies';
+import { slugify } from '../../../lib/slug';
+import { isFailure, isSuccess } from '../../../lib/errors';
+import './platform-admin.css';
 
 interface CompanyForm {
     legal_name: string;
@@ -72,7 +73,7 @@ export default function CreateCompanyModal({ onClose, onCreated }: CreateCompany
         const res = await createCompany(form);
         setSubmitting(false);
 
-        if (res.success && res.data) {
+        if (isSuccess(res) && res.data) {
             setSuccess({
                 company_id: res.data.company_id,
                 invitation_url: res.data.invitation_url,
@@ -81,7 +82,7 @@ export default function CreateCompanyModal({ onClose, onCreated }: CreateCompany
             setForm(EMPTY_FORM);
             onCreated();
         } else if (isFailure(res)) {
-            setError(res.error ?? 'Error desconocido');
+            setError(res.error);
         }
     }
 

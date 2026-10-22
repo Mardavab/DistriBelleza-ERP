@@ -1,10 +1,10 @@
 'use server'
 
-import { supabaseAdmin } from '../../lib/supabase';
+import { supabaseAdmin } from '../../../lib/supabase';
 import { revalidatePath } from 'next/cache';
-import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers';
-import { requireBranchContext } from '../../lib/supabase/branch-context';
-import { handleActionError, err } from '../../lib/errors';
+import { requireAuthContext, requireOwner } from '../../../lib/supabase/auth-helpers';
+import { requireBranchContext } from '../../../lib/supabase/branch-context';
+import { handleActionError, err, type ActionResult } from '../../../lib/errors';
 
 export async function getMajorExpenses() {
   try {
@@ -32,7 +32,7 @@ export async function addMajorExpense(
   amount: number,
   expenseDate: string,
   notes: string | null
-) {
+): Promise<ActionResult<never>> {
   try {
     // FASE 10: el rol se lee de la membresía activa (no de profiles.role,
     // que se elimina en 10.5). requireAuthContext valida sesión + membresía.
@@ -64,7 +64,7 @@ export async function addMajorExpense(
   }
 }
 
-export async function deleteMajorExpense(id: string) {
+export async function deleteMajorExpense(id: string): Promise<ActionResult<never>> {
   try {
     // FASE 10: el rol se lee de la membresía activa (no de profiles.role,
     // que se elimina en 10.5). requireAuthContext valida sesión + membresía.

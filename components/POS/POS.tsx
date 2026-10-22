@@ -82,7 +82,7 @@ export default function POS() {
   const barcodeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Tabs state
-  const [activeTab, setActiveTab] = useState<'cart' | 'expenses' | 'major'>('cart');
+  const [activeTab, setActiveTab] = useState<POSMode>('cart');
 
   // History state
   const [showHistory, setShowHistory] = useState(false);
@@ -351,7 +351,7 @@ export default function POS() {
 // explícito al miembro correcto del union discriminado.
 setSuccessData(res as Extract<typeof res, { success: true }>);
       if (res.receipt) {
-        // companyId + branding se inyectan en runtime para el print service
+        // companyId + branding se inyectan en runtime para el recibo
         const currentCompanyId = await getCurrentCompanyIdAction();
         const currentCompany = await getCurrentCompanyAction();
         setReceiptData({

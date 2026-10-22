@@ -14,7 +14,7 @@ import {
   getCategories,
   createCategory
 } from '../../app/actions/inventory_actions';
-import CustomSelect from '../UI/CustomSelect';
+import CustomSelect from '../../shared/ui/CustomSelect';
 import { parseCurrencyInput, formatCurrencyInput, formatCurrency } from '../../lib/format';
 import { isFailure } from '../../lib/errors';
 

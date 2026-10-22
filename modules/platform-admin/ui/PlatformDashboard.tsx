@@ -4,10 +4,12 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
     Activity, Globe, HeartPulse, AlertTriangle, Users, RefreshCw, Building2,
 } from 'lucide-react';
-import { getAllCompanies, getSystemHealth, type CompanyActivity } from '../../app/actions/platform';
+import { getAllCompanies, getSystemHealth } from '../actions/platform';
+import type { CompanyActivity } from '../types';
+import { isFailure, isSuccess } from '../../../lib/errors';
 import CompanyList from './CompanyList';
-import { IDLE_DAYS_THRESHOLD, isIdleCompany } from '../../lib/tenant-usage';
-import './Platform.css';
+import { IDLE_DAYS_THRESHOLD, isIdleCompany } from '../../../lib/tenant-usage';
+import './platform-admin.css';
 
 /**
  * Consola del administrador de plataforma.
@@ -33,18 +35,18 @@ export default function PlatformDashboard() {
             getSystemHealth(),
         ]);
 
-        if (companiesRes.success && companiesRes.data) {
+        if (isSuccess(companiesRes) && companiesRes.data) {
             setCompanies(companiesRes.data);
-        } else {
-            setError(companiesRes.error || 'No se pudieron cargar las empresas');
+        } else if (isFailure(companiesRes)) {
+            setError(companiesRes.error);
         }
 
-        if (healthRes.success && healthRes.checks) {
+        if (isSuccess(healthRes) && healthRes.data) {
             setHealthSummary({
-                ok: healthRes.checks.filter(c => c.status === 'ok').length,
-                warn: healthRes.checks.filter(c => c.status === 'warn').length,
-                error: healthRes.checks.filter(c => c.status === 'error').length,
-                total: healthRes.checks.length,
+                ok: healthRes.data.filter(c => c.status === 'ok').length,
+                warn: healthRes.data.filter(c => c.status === 'warn').length,
+                error: healthRes.data.filter(c => c.status === 'error').length,
+                total: healthRes.data.length,
             });
         }
 

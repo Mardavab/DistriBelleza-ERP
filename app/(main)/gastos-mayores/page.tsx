@@ -1,4 +1,4 @@
-import MajorExpensesView from '../../../components/MajorExpenses/MajorExpensesView';
+import { MajorExpensesView } from '../../../modules/major-expenses';
 
 export default function GastosMayoresPage() {
     return <MajorExpensesView />;

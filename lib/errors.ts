@@ -41,6 +41,8 @@
  *
  * - `UNAUTHENTICATED`: no hay sesión activa.
  * - `NO_COMPANY_CONTEXT`: sesión sin empresa (cuenta de plataforma o sin asignar).
+ * - `NO_MEMBERSHIP`: la empresa del JWT existe pero el usuario no tiene membresía en ella.
+ * - `NO_BRANCH_CONTEXT`: sesión sin sucursal activa.
  * - `FORBIDDEN`: el rol del usuario no permite la operación.
  * - `VALIDATION`: input inválido del usuario (formulario, parámetros).
  * - `NOT_FOUND`: recurso no existe.
@@ -52,6 +54,7 @@
 export type AppErrorCode =
   | 'UNAUTHENTICATED'
   | 'NO_COMPANY_CONTEXT'
+  | 'NO_MEMBERSHIP'
   | 'NO_BRANCH_CONTEXT'
   | 'FORBIDDEN'
   | 'VALIDATION'
@@ -68,6 +71,7 @@ export type AppErrorCode =
 const DEFAULT_USER_MESSAGES: Record<AppErrorCode, string> = {
   UNAUTHENTICATED: 'Tu sesión expiró. Inicia sesión de nuevo.',
   NO_COMPANY_CONTEXT: 'No tenés una empresa asignada. Contactá al administrador.',
+  NO_MEMBERSHIP: 'Tu cuenta no tiene acceso a esta empresa. Contactá al administrador.',
   NO_BRANCH_CONTEXT: 'No tenés una sucursal activa. Pedile al owner que te asigne.',
   FORBIDDEN: 'No tenés permisos para realizar esta acción.',
   VALIDATION: 'Los datos ingresados no son válidos.',
@@ -118,6 +122,29 @@ export function isAppError(value: unknown): value is AppError {
 }
 
 /**
+ * Shape canónico del resultado de un server action.
+ *
+ * `ActionFailure` coincide exactamente con lo que devuelve `handleActionError`,
+ * e `isFailure`/`isSuccess` hacen narrowing sobre estos tipos. Centralizarlos
+ * aquí evita que cada archivo de actions defina el suyo (antes vivía solo en
+ * `app/actions/cash_actions.ts`).
+ *
+ * Para successes sin payload usar `ActionResult<never>`:
+ *
+ * ```ts
+ * export async function removeThing(id: string): Promise<ActionResult<never>> {
+ *   try { … ; return { success: true as const } }
+ *   catch (e) { return handleActionError(e, 'removeThing') }
+ * }
+ * ```
+ */
+export type ActionFailure = { success: false; error: string; code: AppErrorCode };
+
+export type ActionSuccess<T = unknown> = { success: true; data?: T };
+
+export type ActionResult<T = unknown> = ActionSuccess<T> | ActionFailure;
+
+/**
  * Type guard genérico: detecta si una respuesta de server action es éxito.
  * Útil para narrowing de discriminated unions en componentes cliente.
  *
@@ -129,7 +156,7 @@ export function isAppError(value: unknown): value is AppError {
  * }
  * ```
  */
-export function isSuccess<T>(value: { success: boolean; data?: T }): value is { success: true; data?: T } {
+export function isSuccess<T>(value: { success: boolean; data?: T }): value is ActionSuccess<T> {
   return value.success === true;
 }
 
@@ -137,7 +164,7 @@ export function isSuccess<T>(value: { success: boolean; data?: T }): value is { 
  * Type guard genérico: detecta si una respuesta de server action falló.
  * Útil para narrowing de discriminated unions en componentes cliente.
  */
-export function isFailure(value: { success: boolean }): value is { success: false; error: string; code: AppErrorCode } {
+export function isFailure(value: { success: boolean }): value is ActionFailure {
   return value.success === false;
 }
 
@@ -151,6 +178,7 @@ function legacyCodeFromString(value: unknown): AppErrorCode | null {
   const known: AppErrorCode[] = [
     'UNAUTHENTICATED',
     'NO_COMPANY_CONTEXT',
+    'NO_MEMBERSHIP',
     'NO_BRANCH_CONTEXT',
     'FORBIDDEN',
     'VALIDATION',

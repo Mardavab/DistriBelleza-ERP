@@ -1,6 +1,7 @@
 import { createClient } from './server'
 import { supabaseAdmin } from '../supabase'
 import { isPlatformUser } from './membership-queries'
+import { err } from '../errors'
 import {
     getActiveBranch,
     isUserInBranch,
@@ -104,13 +105,13 @@ export async function requireBranchContext(): Promise<{ userId: string; branchId
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 
     if (authError || !user) {
-        throw new Error('UNAUTHENTICATED')
+        throw err('UNAUTHENTICATED', 'requireBranchContext: no active session')
     }
 
     const branchId = await resolveBranchIdForUser(user.id, user.app_metadata ?? {})
 
     if (!branchId) {
-        throw new Error('NO_BRANCH_CONTEXT')
+        throw err('NO_BRANCH_CONTEXT', `requireBranchContext: no active branch for ${user.id}`)
     }
 
     return { userId: user.id, branchId }
@@ -240,7 +241,11 @@ export async function syncBranchIdToJwtIfMissing(
     })
 
     if (error) {
-        throw new Error(`syncBranchIdToJwtIfMissing(${userId}): ${error.message}`)
+        throw err(
+            'EXTERNAL',
+            `syncBranchIdToJwtIfMissing(${userId}): ${error.message}`,
+            { cause: error }
+        )
     }
 
     return true

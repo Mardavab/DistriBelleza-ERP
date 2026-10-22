@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Banknote, CreditCard, RefreshCw, ShieldCheck, Smartphone, Wallet, QrCode, AlertTriangle } from 'lucide-react';
-import CustomSelect from '../UI/CustomSelect';
+import CustomSelect from '../../shared/ui/CustomSelect';
 import { formatCurrency, formatCurrencyInput, parseCurrencyInput } from '../../lib/format';
 import { PaymentMethod, TransferType } from './types';
 
