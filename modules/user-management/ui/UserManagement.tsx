@@ -297,8 +297,8 @@ export default function UserManagement({ currentUserRole }: UserManagementProps)
                                         value={formData.role}
                                         onChange={(val) => setFormData({ ...formData, role: val })}
                                         options={[
-                                            { value: 'manager', label: 'Manager (Ventas y Reportes)' },
-                                            { value: 'technician', label: 'Técnico (Inventario y Config)' },
+                                            { value: 'manager', label: 'Manager (Panel, POS e Inventario)' },
+                                            { value: 'technician', label: 'Técnico (Consola de Plataforma)' },
                                             { value: 'owner', label: 'Owner (Acceso Total)' }
                                         ]}
                                     />

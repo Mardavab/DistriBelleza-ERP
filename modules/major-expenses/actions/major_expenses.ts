@@ -5,9 +5,14 @@ import { revalidatePath } from 'next/cache';
 import { requireAuthContext, requireOwner } from '../../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../../lib/supabase/branch-context';
 import { handleActionError, err, type ActionResult } from '../../../lib/errors';
+import { audit } from '../../../lib/audit';
 
 export async function getMajorExpenses() {
   try {
+    // Gastos Mayores es un módulo solo-owner: también en lectura.
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
+
     // FASE 11 (Bloque C): major_expenses.branch_id es NOT NULL.
     // Filtramos por la sucursal activa del usuario para que un owner
     // con varias sucursales solo vea los gastos de la que está operando.
@@ -57,6 +62,10 @@ export async function addMajorExpense(
       });
 
     if (error) throw err('EXTERNAL', `major_expenses.insert: ${error.message}`, { cause: error });
+    await audit(ctx, 'addMajorExpense', 'major_expense', {
+      payload: { category, description, amount, expenseDate },
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -83,6 +92,10 @@ export async function deleteMajorExpense(id: string): Promise<ActionResult<never
       .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `major_expenses.delete: ${error.message}`, { cause: error });
+    await audit(ctx, 'deleteMajorExpense', 'major_expense', {
+      entityId: id,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {

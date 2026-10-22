@@ -3,7 +3,9 @@
 import { createClient } from '../../lib/supabase/server'
 import { supabaseAdmin } from '../../lib/supabase'
 import { revalidatePath } from 'next/cache'
-import { getUserMemberships, setDefaultMembership } from '../../lib/supabase/membership-queries'
+import { getUserMemberships, setDefaultMembership, isPlatformUser } from '../../lib/supabase/membership-queries'
+import { requireRole } from '../../lib/supabase/auth-helpers'
+import { audit } from '../../lib/audit'
 import { handleActionError, err } from '../../lib/errors'
 
 /**
@@ -28,6 +30,7 @@ import { handleActionError, err } from '../../lib/errors'
  */
 export async function switchActiveCompanyAction(companyId: string) {
     try {
+        const ctx = await requireRole(['owner', 'manager'])
         const supabase = createClient()
         const { data: { user }, error: authError } = await supabase.auth.getUser()
 
@@ -60,6 +63,10 @@ export async function switchActiveCompanyAction(companyId: string) {
                 app_metadata: {
                     company_id: companyId,
                     role: target.role,
+                    // Espejo de profiles.is_platform_admin para que el middleware
+                    // enrute por rol sin consultar la BD. Se escribe explícito
+                    // porque updateUserById reemplaza app_metadata.
+                    is_platform_admin: await isPlatformUser(user.id),
                 },
             }
         )
@@ -77,6 +84,12 @@ export async function switchActiveCompanyAction(companyId: string) {
         //    `refreshSession()` reemite el JWT con los nuevos claims de
         //    app_metadata, así que el render siguiente ya ve company_id nuevo.
         await supabase.auth.refreshSession()
+
+        await audit(ctx, 'switchActiveCompanyAction', 'membership', {
+          companyId,
+          entityId: companyId,
+          payload: { switched_to: companyId, role: target.role },
+        });
 
         revalidatePath('/', 'layout')
         return { success: true as const, companyId, role: target.role }

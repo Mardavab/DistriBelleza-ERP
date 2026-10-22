@@ -2,15 +2,18 @@
 
 import { supabaseAdmin } from '../../lib/supabase';
 import { unstable_noStore as noStore, revalidatePath } from 'next/cache';
+import { requireRole } from '../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { getColombiaToday } from '../../lib/timezone';
 import { handleActionError, err } from '../../lib/errors';
+import { audit } from '../../lib/audit';
 
 export async function getSalesHistory() {
   noStore();
   try {
     // FASE 11 (Bloque C): filtramos ventas de la SUCURSAL activa.
+    await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) return { success: true as const, data: [] };
@@ -51,6 +54,7 @@ export async function getSalesHistory() {
 export async function deleteSale(saleId: string) {
   try {
     // FASE 11 (Bloque C): tenant_delete_sale ahora requiere p_branch_id.
+    const ctx = await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) {
@@ -70,6 +74,12 @@ export async function deleteSale(saleId: string) {
     const result = data as { success: boolean; error?: string };
     if (!result.success) throw err('VALIDATION', `tenant_delete_sale: ${result.error ?? 'failed'}`, {
       userMessage: result.error,
+    });
+
+    await audit(ctx, 'deleteSale', 'sale', {
+      branchId,
+      entityId: saleId,
+      payload: { reason: 'anulación manual desde historial de ventas' },
     });
 
     revalidatePath('/');

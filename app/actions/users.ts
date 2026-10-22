@@ -4,6 +4,7 @@ import { supabaseAdmin } from '../../lib/supabase'
 import { revalidatePath } from 'next/cache'
 import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers'
 import { handleActionError, err, warnSilently } from '../../lib/errors'
+import { audit } from '../../lib/audit'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -218,6 +219,10 @@ export async function createUser(payload: {
         // eslint-disable-next-line no-console
         console.log(`[createUser] Invitación creada para ${payload.email}: ${inviteUrl}`)
 
+        await audit(ctx, 'createUser', 'user', {
+          payload: { email: payload.email, role: payload.role },
+        });
+
         revalidatePath('/')
         return { success: true as const, invitation_url: inviteUrl }
     } catch (caught) {
@@ -296,6 +301,10 @@ export async function updateUser(
         )
         if (authError) throw err('EXTERNAL', `auth.updateUserById: ${authError.message}`, { cause: authError })
 
+        await audit(ctx, 'updateUser', 'user', {
+          entityId: userId,
+        });
+
         revalidatePath('/')
         return { success: true as const }
     } catch (caught) {
@@ -335,6 +344,10 @@ export async function deleteUser(userId: string) {
 
         const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
         if (error) throw err('EXTERNAL', `auth.deleteUser: ${error.message}`, { cause: error })
+
+        await audit(ctx, 'deleteUser', 'user', {
+          entityId: userId,
+        });
 
         revalidatePath('/')
         return { success: true as const }
@@ -439,6 +452,8 @@ export async function acceptInvitationAction(formData: FormData) {
                 company_id: invitation.company_id,
                 role: invitation.role,
                 branch_id: targetBranchId,
+                // Los usuarios invitados nunca son cuentas de plataforma.
+                is_platform_admin: false,
             },
             email_confirm: true,
         })

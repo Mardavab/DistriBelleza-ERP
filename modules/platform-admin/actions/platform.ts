@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../../lib/supabase'
 import { requirePlatformRole } from '../../../lib/supabase/auth-helpers'
 import { err, handleActionError, type ActionResult } from '../../../lib/errors'
+import { audit } from '../../../lib/audit'
 import type { CompanyActivity, HealthCheck } from '../types'
 
 /**
@@ -226,7 +227,7 @@ export async function setCompanyActive(
     reason?: string
 ): Promise<ActionResult<never>> {
     try {
-        await requirePlatformRole(PLATFORM_ROLES)
+        const ctx = await requirePlatformRole(PLATFORM_ROLES)
 
         if (typeof companyId !== 'string' || !UUID_RE.test(companyId)) {
             throw err('VALIDATION', 'invalid company id', {
@@ -274,6 +275,12 @@ export async function setCompanyActive(
             `[platform] Empresa ${companyId} ${active ? 'activada' : 'desactivada'}` +
             (active ? '' : ` — motivo: ${cleanReason}`)
         )
+
+        await audit(ctx, 'setCompanyActive', 'company', {
+          companyId,
+          entityId: companyId,
+          payload: { active, reason: cleanReason },
+        });
 
         return { success: true as const }
     } catch (caught) {

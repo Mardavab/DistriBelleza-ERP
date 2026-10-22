@@ -32,10 +32,20 @@ export async function login(formData: FormData) {
     const userId = authData.user.id
     const isPlatformAdmin = await resolveIsPlatform(userId)
 
+    // Denormalizar `profiles.is_platform_admin` en app_metadata para que el
+    // middleware pueda enrutar por rol sin consultar la BD. Se escribe el
+    // app_metadata completo (spread) porque updateUserById lo reemplaza.
+    const currentMeta = (authData.user.app_metadata ?? {}) as Record<string, unknown>
+    if (currentMeta.is_platform_admin !== isPlatformAdmin) {
+        await supabaseAdmin.auth.admin.updateUserById(userId, {
+            app_metadata: { ...currentMeta, is_platform_admin: isPlatformAdmin },
+        })
+    }
+
     // Las cuentas de plataforma no están vinculadas a ninguna empresa.
     if (isPlatformAdmin) {
         console.warn(`[login] Acceso de plataforma: ${email}`)
-        redirect('/')
+        redirect('/plataforma')
     }
 
     const companyId = authData.user.app_metadata?.company_id as string | undefined

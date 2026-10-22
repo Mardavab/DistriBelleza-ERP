@@ -3,11 +3,13 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { createClient } from '../../lib/supabase/server';
+import { requireRole } from '../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { getCurrentCompany } from '../../lib/company';
 import { getColombiaToday } from '../../lib/timezone';
 import { handleActionError, err, warnSilently, isSuccess, isFailure, type ActionFailure } from '../../lib/errors';
+import { audit } from '../../lib/audit';
 
 export type CashSessionWithTotals = {
   id: string;
@@ -58,6 +60,7 @@ export async function getActiveCashSession(): Promise<GetActiveResult> {
   noStore();
   try {
     // FASE 11 (Bloque C): cada sucursal tiene su propia sesión de caja.
+    await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) return null;
@@ -121,6 +124,7 @@ export async function openCashSession(initialFund: number): Promise<OpenCashResu
     const supabase = createClient();
     // FASE 11 (Bloque C): la sesión de caja es POR SUCURSAL. Rechaza si
     // ya hay una abierta en la sucursal activa (no por empresa).
+    const ctx = await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) {
@@ -165,6 +169,12 @@ export async function openCashSession(initialFund: number): Promise<OpenCashResu
       throw err('EXTERNAL', `openCashSession:insert: ${error.message}`, { cause: error });
     }
 
+    await audit(ctx, 'openCashSession', 'cash_session', {
+      branchId,
+      entityId: (data as { id?: string })?.id ?? null,
+      payload: { initialFund },
+    });
+
     revalidatePath('/');
     return { success: true as const, data };
   } catch (caught) {
@@ -177,6 +187,7 @@ export async function getCashSessionSummary(sessionId: string): Promise<GetSumma
   try {
     // FASE 11 (Bloque C): la sesión es POR SUCURSAL. El resumen
     // (ventas, gastos) se filtra por la sucursal de la sesión.
+    await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) {
@@ -256,6 +267,7 @@ export async function closeCashSession(sessionId: string): Promise<CloseCashResu
   try {
     // FASE 11 (Bloque C): la sesión es por sucursal. Validamos que la
     // sesión a cerrar pertenece a la sucursal activa.
+    const ctx = await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) {
@@ -278,6 +290,11 @@ export async function closeCashSession(sessionId: string): Promise<CloseCashResu
       throw err('EXTERNAL', `closeCashSession:update: ${updateError.message}`, { cause: updateError });
     }
 
+    await audit(ctx, 'closeCashSession', 'cash_session', {
+      branchId,
+      entityId: sessionId,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -288,6 +305,7 @@ export async function closeCashSession(sessionId: string): Promise<CloseCashResu
 export async function addExpense(description: string, amount: number): Promise<AddExpenseResult> {
   try {
     // FASE 11 (Bloque C): expenses.branch_id es NOT NULL.
+    const ctx = await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) {
@@ -309,6 +327,11 @@ export async function addExpense(description: string, amount: number): Promise<A
     if (error) {
       throw err('EXTERNAL', `addExpense:insert: ${error.message}`, { cause: error });
     }
+
+    await audit(ctx, 'addExpense', 'cash_expense', {
+      branchId,
+      payload: { description, amount },
+    });
 
     revalidatePath('/');
     return { success: true as const };

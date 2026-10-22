@@ -2,6 +2,7 @@
 
 import { getCurrentCompany } from '../../lib/company'
 import { getCurrentCompanyId as _getCurrentCompanyId } from '../../lib/supabase/company-context'
+import { requireRole } from '../../lib/supabase/auth-helpers'
 import { handleActionError, isAppError } from '../../lib/errors'
 
 /**
@@ -12,6 +13,7 @@ import { handleActionError, isAppError } from '../../lib/errors'
  * desde cualquier componente (servidor o cliente).
  */
 export async function getCurrentCompanyAction() {
+    await requireRole(['owner', 'manager'])
     return getCurrentCompany()
 }
 
@@ -24,6 +26,7 @@ export async function getCurrentCompanyAction() {
  */
 export async function getCurrentCompanyIdAction(): Promise<string | null> {
     try {
+        await requireRole(['owner', 'manager'])
         return await _getCurrentCompanyId()
     } catch (caught) {
         if (isAppError(caught) && (caught.code === 'UNAUTHENTICATED' || caught.code === 'NO_COMPANY_CONTEXT')) {
@@ -43,6 +46,7 @@ export async function getPdfBrandingAction(): Promise<{
     footer: string
     trade_name: string
 }> {
+    await requireRole(['owner', 'manager'])
     const company = await getCurrentCompany()
     const tradeName = company?.trade_name || company?.legal_name || 'ERP'
 

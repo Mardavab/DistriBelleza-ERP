@@ -4,6 +4,7 @@ import { revalidatePath } from 'next/cache'
 import { supabaseAdmin } from '../../lib/supabase'
 import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers'
 import { handleActionError, err } from '../../lib/errors'
+import { audit } from '../../lib/audit'
 import type { Branch } from '../../lib/supabase/branches'
 
 /**
@@ -50,6 +51,7 @@ export async function listBranchesAction(): Promise<{
 }> {
     try {
         const ctx = await requireAuthContext()
+        requireOwner(ctx.role)
 
         const { data: branches, error } = await supabaseAdmin
             .from('branches')
@@ -153,6 +155,10 @@ export async function createBranchAction(payload: {
             throw err('EXTERNAL', `branches.insert: ${error.message}`, { cause: error })
         }
 
+        await audit(ctx, 'createBranchAction', 'branch', {
+          payload: { name: payload.name, code: payload.code },
+        });
+
         revalidatePath('/', 'layout')
         return { success: true as const, data: created as Branch }
     } catch (caught) {
@@ -246,6 +252,10 @@ export async function updateBranchAction(
             throw err('EXTERNAL', `branches.update: ${error.message}`, { cause: error })
         }
 
+        await audit(ctx, 'updateBranchAction', 'branch', {
+          entityId: branchId,
+        });
+
         revalidatePath('/', 'layout')
         return { success: true as const }
     } catch (caught) {
@@ -322,6 +332,10 @@ export async function deactivateBranchAction(branchId: string): Promise<{
         if (error) {
             throw err('EXTERNAL', `branches.update: ${error.message}`, { cause: error })
         }
+
+        await audit(ctx, 'deactivateBranchAction', 'branch', {
+          entityId: branchId,
+        });
 
         revalidatePath('/', 'layout')
         return { success: true as const }

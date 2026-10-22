@@ -404,7 +404,7 @@ describe('modules/major-expenses/actions/major_expenses.ts (Fase 10 + Fase 11 Bl
             expect(orderCalls).toEqual([['expense_date', { ascending: false }]])
         })
 
-        it('NO llama requireAuthContext ni requireOwner (solo lectura)', async () => {
+        it('exige owner también en lectura (módulo owner-only)', async () => {
             mockFrom.mockImplementation((table: string) => {
                 if (table === 'major_expenses') {
                     return {
@@ -422,8 +422,9 @@ describe('modules/major-expenses/actions/major_expenses.ts (Fase 10 + Fase 11 Bl
 
             await getMajorExpenses()
 
-            expect(mockRequireAuthContext).not.toHaveBeenCalled()
-            expect(mockRequireOwner).not.toHaveBeenCalled()
+            expect(mockRequireAuthContext).toHaveBeenCalledTimes(1)
+            expect(mockRequireOwner).toHaveBeenCalledTimes(1)
+            expect(mockRequireOwner).toHaveBeenCalledWith('owner')
         })
 
         it('devuelve los gastos de la sucursal activa', async () => {

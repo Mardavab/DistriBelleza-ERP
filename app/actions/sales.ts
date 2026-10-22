@@ -3,9 +3,11 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { createClient } from '../../lib/supabase/server';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
+import { requireRole } from '../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
 import { handleActionError, AppError, err } from '../../lib/errors';
+import { audit } from '../../lib/audit';
 
 export interface POSItem {
   variant_id: string;
@@ -42,6 +44,7 @@ export async function searchPOSProducts(query: string): Promise<POSSearchResult[
   // es `product_variants.stock` (global de la empresa) — las sucursales
   // comparten inventario. `requireBranchContext` garantiza que el usuario
   // tiene una sucursal activa (para registrar ventas/caja).
+  await requireRole(['owner', 'manager']);
   const { branchId } = await requireBranchContext();
   const companyId = await getCompanyIdForBranch(branchId);
   if (!companyId) return [];
@@ -61,6 +64,7 @@ export async function getDefaultProducts(page: number = 1, pageSize: number = 20
   // BLOQUE D (Fase 11): las sucursales comparten inventario.
   // Filtramos por `product_variants.stock > 0` (NO por `branch_stock`,
   // que ya no existe). El stock es global de la empresa.
+  await requireRole(['owner', 'manager']);
   const { branchId } = await requireBranchContext();
   const companyId = await getCompanyIdForBranch(branchId);
   if (!companyId) return { data: [], count: 0 };
@@ -135,6 +139,7 @@ export async function processPOSSale(
     // pero el stock que valida y descuenta es `product_variants.stock`
     // (global de la empresa) — las sucursales comparten inventario.
     // `requireBranchContext` valida sesión + membrisía de sucursal.
+    const ctx = await requireRole(['owner', 'manager']);
     const { branchId } = await requireBranchContext();
     const companyId = await getCompanyIdForBranch(branchId);
     if (!companyId) {
@@ -207,6 +212,17 @@ export async function processPOSSale(
       unitPrice: Number(si.unit_price),
       discount: Number(si.discount_amount || 0),
     }));
+
+    await audit(ctx, 'processPOSSale', 'sale', {
+      branchId,
+      entityId: result.sale_id,
+      payload: {
+        paymentMethod,
+        transferType: transferType || null,
+        itemCount: receiptItems.length,
+        total: Number(saleDetail?.total_with_discount || 0),
+      },
+    });
 
     return {
       success: true as const,

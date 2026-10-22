@@ -3,8 +3,10 @@
 import { supabaseAdmin } from '../../lib/supabase';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
+import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { handleActionError, err, warnSilently } from '../../lib/errors';
+import { audit } from '../../lib/audit';
 
 // ─── TIPOS ────────────────────────────────────────────────────────────────────
 
@@ -77,6 +79,8 @@ async function uploadInvoiceFile(file: File | null, prefix: string): Promise<str
 export async function getSuppliers(): Promise<{ success: boolean; data?: Supplier[]; error?: string }> {
   noStore();
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
 
     const { data, error } = await supabaseAdmin
@@ -100,6 +104,8 @@ export async function createSupplier(payload: {
   address?: string;
 }): Promise<{ success: boolean; data?: Supplier; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     if (!payload.name?.trim()) {
       throw err('VALIDATION', 'supplier name missing', {
         userMessage: 'El nombre del proveedor es obligatorio.',
@@ -122,6 +128,10 @@ export async function createSupplier(payload: {
       .single();
 
     if (error) throw err('EXTERNAL', `suppliers.insert: ${error.message}`, { cause: error });
+    await audit(ctx, 'createSupplier', 'supplier', {
+      payload: { name: payload.name },
+    });
+
     revalidatePath('/');
     return { success: true as const, data };
   } catch (caught) {
@@ -134,6 +144,8 @@ export async function updateSupplier(
   payload: { name: string; phone?: string; email?: string; address?: string }
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
 
     const { error } = await supabaseAdmin
@@ -149,6 +161,10 @@ export async function updateSupplier(
       .eq('company_id', companyId);
 
     if (error) throw err('EXTERNAL', `suppliers.update: ${error.message}`, { cause: error });
+    await audit(ctx, 'updateSupplier', 'supplier', {
+      entityId: id,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -158,6 +174,8 @@ export async function updateSupplier(
 
 export async function deleteSupplier(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
 
     const { error } = await supabaseAdmin
@@ -167,6 +185,10 @@ export async function deleteSupplier(id: string): Promise<{ success: boolean; er
       .eq('company_id', companyId);
 
     if (error) throw err('EXTERNAL', `suppliers.delete: ${error.message}`, { cause: error });
+    await audit(ctx, 'deleteSupplier', 'supplier', {
+      entityId: id,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -183,6 +205,8 @@ export async function getSupplierInvoices(): Promise<{
 }> {
   noStore();
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
     // FASE 11 (Bloque C): supplier_invoices.branch_id es NOT NULL.
     const { branchId } = await requireBranchContext();
@@ -212,6 +236,8 @@ export async function getSupplierInvoices(): Promise<{
 
 export async function createSupplierInvoice(formData: FormData): Promise<{ success: boolean; data?: SupplierInvoice; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const supplier_id = formData.get('supplier_id') as string;
     const invoice_number = formData.get('invoice_number') as string;
     const issue_date = formData.get('issue_date') as string;
@@ -264,6 +290,10 @@ export async function createSupplierInvoice(formData: FormData): Promise<{ succe
       .single();
 
     if (error) throw err('EXTERNAL', `supplier_invoices.insert: ${error.message}`, { cause: error });
+    await audit(ctx, 'createSupplierInvoice', 'supplier_invoice', {
+      payload: { supplier_id, invoice_number },
+    });
+
     revalidatePath('/');
     return { success: true as const, data };
   } catch (caught) {
@@ -276,6 +306,8 @@ export async function updateSupplierInvoice(
   formData: FormData
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const supplier_id = formData.get('supplier_id') as string;
     const invoice_number = formData.get('invoice_number') as string;
     const issue_date = formData.get('issue_date') as string;
@@ -328,6 +360,10 @@ export async function updateSupplierInvoice(
       .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.update: ${error.message}`, { cause: error });
+    await audit(ctx, 'updateSupplierInvoice', 'supplier_invoice', {
+      entityId: id,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -340,6 +376,8 @@ export async function updateInvoiceStatus(
   status: 'pending' | 'paid' | 'overdue' | 'cancelled'
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
     // FASE 11 (Bloque C): filtrar también por branch_id.
     const { branchId } = await requireBranchContext();
@@ -352,6 +390,10 @@ export async function updateInvoiceStatus(
       .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.update(status): ${error.message}`, { cause: error });
+    await audit(ctx, 'updateInvoiceStatus', 'supplier_invoice', {
+      entityId: id, payload: { status },
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -361,6 +403,8 @@ export async function updateInvoiceStatus(
 
 export async function deleteSupplierInvoice(id: string): Promise<{ success: boolean; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
     // FASE 11 (Bloque C): defense in depth — branch_id en el DELETE.
     const { branchId } = await requireBranchContext();
@@ -373,6 +417,10 @@ export async function deleteSupplierInvoice(id: string): Promise<{ success: bool
       .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.delete: ${error.message}`, { cause: error });
+    await audit(ctx, 'deleteSupplierInvoice', 'supplier_invoice', {
+      entityId: id,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -385,6 +433,8 @@ export async function markInvoiceAsPaid(
   formData?: FormData
 ): Promise<{ success: boolean; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     const companyId = await getCurrentCompanyId();
     // FASE 11 (Bloque C): filtrar también por branch_id (SELECT y UPDATE).
     const { branchId } = await requireBranchContext();
@@ -427,6 +477,10 @@ export async function markInvoiceAsPaid(
       .eq('branch_id', branchId);
 
     if (error) throw err('EXTERNAL', `supplier_invoices.update(paid): ${error.message}`, { cause: error });
+    await audit(ctx, 'markInvoiceAsPaid', 'supplier_invoice', {
+      entityId: id,
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -439,6 +493,8 @@ export async function addInvoicePayment(
   paymentAmount: number
 ): Promise<{ success: boolean; newPaidAmount?: number; newStatus?: string; error?: string }> {
   try {
+    const ctx = await requireAuthContext();
+    requireOwner(ctx.role);
     if (!paymentAmount || paymentAmount <= 0) {
       throw err('VALIDATION', 'payment must be > 0', {
         userMessage: 'El valor del abono debe ser mayor a cero.',
@@ -492,6 +548,10 @@ export async function addInvoicePayment(
       .eq('branch_id', branchId);
 
     if (updateErr) throw err('EXTERNAL', `supplier_invoices.update(payment): ${updateErr.message}`, { cause: updateErr });
+
+    await audit(ctx, 'addInvoicePayment', 'invoice_payment', {
+      entityId: id, payload: { paymentAmount },
+    });
 
     revalidatePath('/');
     return { success: true as const, newPaidAmount, newStatus };

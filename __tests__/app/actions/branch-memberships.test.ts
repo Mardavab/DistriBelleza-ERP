@@ -28,6 +28,10 @@ const mockRequireOwner = jest.fn()
 jest.mock('../../../lib/supabase/auth-helpers', () => ({
     requireAuthContext: (...args: unknown[]) => mockRequireAuthContext(...args),
     requireOwner: (...args: unknown[]) => mockRequireOwner(...args),
+    // requireRole delega a mockRequireAuthContext: las acciones usan ahora
+    // requireRole([...]) donde antes usaban requireAuthContext(), y así los
+    // tests siguen controlando el ctx con el mismo mock.
+    requireRole: (...args: unknown[]) => mockRequireAuthContext(...args),
 }))
 
 const mockIsPlatformUser = jest.fn()

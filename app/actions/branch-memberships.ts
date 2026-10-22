@@ -3,9 +3,10 @@
 import { revalidatePath } from 'next/cache'
 import { supabaseAdmin } from '../../lib/supabase'
 import { createClient } from '../../lib/supabase/server'
-import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers'
+import { requireAuthContext, requireOwner, requireRole } from '../../lib/supabase/auth-helpers'
 import { isPlatformUser } from '../../lib/supabase/membership-queries'
 import { handleActionError, err } from '../../lib/errors'
+import { audit } from '../../lib/audit'
 import {
     getUserBranches,
     isUserInBranch,
@@ -150,6 +151,11 @@ export async function assignUserToBranchAction(
             })
         }
 
+        await audit(ctx, 'assignUserToBranchAction', 'branch_membership', {
+          branchId,
+          entityId: `${userId}:${branchId}`, payload: { userId, branchId, role },
+        });
+
         revalidatePath('/', 'layout')
         return { success: true as const }
     } catch (caught) {
@@ -234,6 +240,11 @@ export async function removeUserFromBranchAction(
             throw err('EXTERNAL', `branch_memberships.delete: ${error.message}`, { cause: error })
         }
 
+        await audit(ctx, 'removeUserFromBranchAction', 'branch_membership', {
+          branchId,
+          entityId: `${userId}:${branchId}`, payload: { userId, branchId },
+        });
+
         revalidatePath('/', 'layout')
         return { success: true as const }
     } catch (caught) {
@@ -282,7 +293,7 @@ export async function switchActiveBranchAction(branchId: string): Promise<{
         //    requireAuthContext ya garantiza que el usuario pertenece al
         //    tenant del JWT; usamos `ctx.companyId` como ancla de defensa
         //    multi-tenant contra un branchId cross-tenant.
-        const ctx = await requireAuthContext()
+        const ctx = await requireRole(['owner', 'manager'])
         const user = ctx.user
 
         if (!UUID_RE.test(branchId)) {
@@ -337,6 +348,8 @@ export async function switchActiveBranchAction(branchId: string): Promise<{
                     company_id: ctx.companyId,
                     branch_id: branchId,
                     role: target.role,
+                    // Espejo de profiles.is_platform_admin para el middleware.
+                    is_platform_admin: await isPlatformUser(user.id),
                 },
             }
         )
@@ -362,6 +375,11 @@ export async function switchActiveBranchAction(branchId: string): Promise<{
 
         // 6. Refrescar la sesión del cliente y revalidar.
         await supabase.auth.refreshSession()
+        await audit(ctx, 'switchActiveBranchAction', 'branch_membership', {
+          branchId,
+          entityId: branchId, payload: { switched_to: branchId },
+        });
+
         revalidatePath('/', 'layout')
 
         return { success: true as const, branchId, role: target.role as UserRole }

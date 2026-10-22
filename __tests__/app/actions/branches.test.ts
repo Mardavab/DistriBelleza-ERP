@@ -212,15 +212,18 @@ describe('app/actions/branches.ts (Fase 11 — Bloque B)', () => {
             expect(mockFrom).not.toHaveBeenCalled()
         })
 
-        it('NO requiere owner (cualquier miembro del tenant puede listar)', async () => {
-            // El selector de sucursal activa lo usan managers, no solo owners.
+        it('requiere owner (solo pantallas de owner la consumen)', async () => {
+            // listBranchesAction la usan BranchManagement (/sucursales),
+            // ReportsView (/reportes) y UserManagement (/configuracion),
+            // las tres rutas owner-only. El BranchSelector del dashboard
+            // usa getUserBranches (lib), no esta action.
             const builder = makeBuilder({ data: [], error: null })
             mockFrom.mockReturnValue(builder)
 
             await listBranchesAction()
 
-            // listBranchesAction NO llama requireOwner
-            expect(mockRequireOwner).not.toHaveBeenCalled()
+            expect(mockRequireOwner).toHaveBeenCalledTimes(1)
+            expect(mockRequireOwner).toHaveBeenCalledWith('owner')
         })
     })
 
@@ -280,9 +283,11 @@ describe('app/actions/branches.ts (Fase 11 — Bloque B)', () => {
 
         it('normaliza code a uppercase antes de guardar', async () => {
             let insertArgs: unknown
-            mockFrom.mockImplementation(() => ({
+            // Solo capturar el INSERT de branches: `audit()` también inserta
+            // (en audit_log) y pisaría insertArgs si no filtramos por tabla.
+            mockFrom.mockImplementation((table: string) => ({
                 insert: jest.fn().mockImplementation((payload: unknown) => {
-                    insertArgs = payload
+                    if (table === 'branches') insertArgs = payload
                     return {
                         select: jest.fn().mockReturnValue({
                             single: jest.fn().mockResolvedValue({
@@ -364,9 +369,11 @@ describe('app/actions/branches.ts (Fase 11 — Bloque B)', () => {
 
         it('convierte strings vacíos de address/phone a null', async () => {
             let insertArgs: unknown
-            mockFrom.mockImplementation(() => ({
+            // Solo capturar el INSERT de branches: `audit()` también inserta
+            // (en audit_log) y pisaría insertArgs si no filtramos por tabla.
+            mockFrom.mockImplementation((table: string) => ({
                 insert: jest.fn().mockImplementation((payload: unknown) => {
-                    insertArgs = payload
+                    if (table === 'branches') insertArgs = payload
                     return {
                         select: jest.fn().mockReturnValue({
                             single: jest.fn().mockResolvedValue({

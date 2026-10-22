@@ -5,10 +5,13 @@ import { revalidatePath } from 'next/cache';
 import { getCurrentCompanyId } from '../../lib/supabase/company-context';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { getCompanyIdForBranch } from '../../lib/supabase/branch-membership-queries';
+import { requireRole } from '../../lib/supabase/auth-helpers';
 import { handleActionError, warnSilently, isAppError, err } from '../../lib/errors';
+import { audit } from '../../lib/audit';
 
 export async function getInventory() {
   try {
+    await requireRole(['owner', 'manager']);
     // BLOQUE D (Fase 11): las sucursales comparten inventario. Leemos
     // directamente de `product_variants.stock` (fuente de verdad única
     // por empresa), con JOIN a `products` para los datos de catálogo.
@@ -49,6 +52,7 @@ export async function getInventory() {
 
 export async function getCategories() {
   try {
+    await requireRole(['owner', 'manager']);
     const companyId = await getCurrentCompanyId();
 
     const { data, error } = await supabaseAdmin
@@ -68,6 +72,7 @@ export async function getCategories() {
 
 export async function createProductWithVariants(productData: any, variants: any[]) {
   try {
+    const ctx = await requireRole(['owner', 'manager']);
     // BLOQUE D (Fase 11): el stock inicial se asigna a
     // `product_variants.stock` (NO a `branch_stock`, que ya no existe).
     // Las sucursales comparten inventario: el stock es global de la
@@ -137,6 +142,10 @@ export async function createProductWithVariants(productData: any, variants: any[
       if (movError) throw err('EXTERNAL', `inventory_movements.insert: ${movError.message}`, { cause: movError });
     }
 
+    await audit(ctx, 'createProductWithVariants', 'product', {
+      payload: { name: productData?.name, sku: productData?.sku, variantCount: variants.length },
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -146,6 +155,7 @@ export async function createProductWithVariants(productData: any, variants: any[
 
 export async function updateProductWithVariants(productId: string, productData: any, variants: any[]) {
   try {
+    const ctx = await requireRole(['owner', 'manager']);
     // BLOQUE D (Fase 11): operamos sobre `product_variants.stock` (no
     // `branch_stock`, que ya no existe). Las sucursales comparten
     // inventario. Mantenemos `requireBranchContext` solo para asignar
@@ -237,6 +247,11 @@ export async function updateProductWithVariants(productId: string, productData: 
       }
     }
 
+    await audit(ctx, 'updateProductWithVariants', 'product', {
+      entityId: productId,
+      payload: { name: productData?.name, sku: productData?.sku, variantCount: variants.length },
+    });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -246,6 +261,7 @@ export async function updateProductWithVariants(productId: string, productData: 
 
 export async function deleteProduct(productId: string) {
   try {
+    const ctx = await requireRole(['owner', 'manager']);
     const companyId = await getCurrentCompanyId();
 
     const { error } = await supabaseAdmin
@@ -256,6 +272,8 @@ export async function deleteProduct(productId: string) {
 
     if (error) throw err('EXTERNAL', `products.delete: ${error.message}`, { cause: error });
 
+    await audit(ctx, 'deleteProduct', 'product', { entityId: productId });
+
     revalidatePath('/');
     return { success: true as const };
   } catch (caught) {
@@ -265,6 +283,7 @@ export async function deleteProduct(productId: string) {
 
 export async function createCategory(name: string, description?: string) {
   try {
+    const ctx = await requireRole(['owner', 'manager']);
     const companyId = await getCurrentCompanyId();
 
     const { data, error } = await supabaseAdmin
@@ -274,6 +293,11 @@ export async function createCategory(name: string, description?: string) {
       .single();
 
     if (error) throw err('EXTERNAL', `categories.insert: ${error.message}`, { cause: error });
+    await audit(ctx, 'createCategory', 'category', {
+      entityId: (data as { id?: string })?.id ?? null,
+      payload: { name, description: description ?? null },
+    });
+
     revalidatePath('/');
     return { success: true as const, data };
   } catch (caught) {

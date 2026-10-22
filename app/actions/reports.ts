@@ -2,7 +2,7 @@
 
 import { supabaseAdmin } from '../../lib/supabase';
 import { getCurrentCompany } from '../../lib/company';
-import { requireAuthContext, requireOwner } from '../../lib/supabase/auth-helpers';
+import { requireRole, requireOwner } from '../../lib/supabase/auth-helpers';
 import { requireBranchContext } from '../../lib/supabase/branch-context';
 import { isUserInBranch } from '../../lib/supabase/branch-membership-queries';
 import { getColombiaToday, getColombiaDayRange } from '../../lib/timezone';
@@ -92,7 +92,7 @@ export async function getFinancialReport(
     //    `company_id` para mantener el aislamiento multi-tenant. Sin
     //    este filtro, cualquier usuario autenticado vería datos
     //    financieros de TODAS las empresas (Hallazgo C2 Bloque A).
-    const ctx = await requireAuthContext()
+    const ctx = await requireRole(['owner', 'manager'])
     const companyId = ctx.companyId
     const userRole = ctx.role as string
 
@@ -390,6 +390,7 @@ async function loadBranchForTenant(
  * la UI de Reportes.
  */
 export async function getDashboardStats() {
+    await requireRole(['owner', 'manager'])
     const today = getColombiaToday();
     const report = await getFinancialReport(today, 'current');
 
@@ -409,6 +410,7 @@ export async function getDashboardStats() {
  * Usado por componentes cliente que necesitan mostrar la meta.
  */
 export async function getCommissionGoalFormatted(): Promise<string> {
+    await requireRole(['owner', 'manager'])
     const company = await getCurrentCompany();
     const goal = company?.settings.commission_threshold ?? 1800000;
     return `$${goal.toLocaleString('es-CO')}`;

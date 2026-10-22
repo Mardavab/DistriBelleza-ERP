@@ -63,13 +63,18 @@ const platformMenu: MenuItem[] = [
   { href: '/plataforma/empresas', name: 'Empresas', icon: <Globe size={20} /> },
 ];
 
+// Niveles de acceso por ruta (el middleware.ts es la autoridad; esto es la
+// visibilidad en el menú):
+//   owner      las 8 rutas de empresa
+//   manager    /, /pos, /inventario
+//   technician SOLO /plataforma*
 const companyMenu: MenuItem[] = [
   { href: '/', name: 'Panel de Control', icon: <LayoutDashboard size={20} /> },
   { href: '/pos', name: 'Punto de Venta', icon: <ShoppingCart size={20} /> },
   { href: '/inventario', name: 'Inventario', icon: <Package size={20} /> },
-  { href: '/proveedores', name: 'Proveedores', icon: <Truck size={20} /> },
+  { href: '/proveedores', name: 'Proveedores', icon: <Truck size={20} />, ownerOnly: true },
   { href: '/gastos-mayores', name: 'Gastos Mayores', icon: <Building2 size={20} />, ownerOnly: true },
-  { href: '/reportes', name: 'Reportes', icon: <BarChart3 size={20} /> },
+  { href: '/reportes', name: 'Reportes', icon: <BarChart3 size={20} />, ownerOnly: true },
   { href: '/sucursales', name: 'Sucursales', icon: <Store size={20} />, ownerOnly: true },
   { href: '/configuracion', name: 'Configuración', icon: <Settings size={20} />, ownerOnly: true },
 ];

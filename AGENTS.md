@@ -55,11 +55,28 @@ Este archivo define reglas y contexto para todos los agentes/asistentes que trab
 - **Nunca exponer claves secretas.** `.env.local` contiene `SUPABASE_SERVICE_ROLE_KEY` y ANON (gitignored). No commitear `.env*` con valores reales. **No crear `.env.example`** en este repo (decisión actual).
 - **No hardcodear URLs/IDs.** Leer de env vars (`NEXT_PUBLIC_SUPABASE_URL`, etc.) o `.supabase-project.json`.
 - **Multi-tenancy:** **Fase 10 cerrada.** Respetar `company_id` y RLS. Revisar contexto empresa (`lib/supabase/company-context.ts`) y membrisías (`lib/supabase/membership-queries.ts`).
-- **Server actions multi-tenant — OBLIGATORIO usar `requireAuthContext`:**
-  - Toda server action de negocio (POS, inventario, ventas, reportes, etc.) **debe** empezar con `const ctx = await requireAuthContext()`. Esto valida sesión + membrisía + rol en una sola línea.
-  - Después, según la acción: `requireOwner(ctx.role)` (solo owners) o `requireRole(ctx.role, ['owner', 'manager'])` (owners + managers).
+- **Roles — modelo de 3 niveles (la autoridad es `middleware.ts`):**
+
+  | Nivel | Rutas | Guardia en server actions |
+  |---|---|---|
+  | `owner` | las 8 rutas de empresa | `requireAuthContext()` + `requireOwner(ctx.role)` |
+  | `manager` | `/`, `/pos`, `/inventario` | `requireRole(['owner', 'manager'])` |
+  | `technician` | **solo** `/plataforma*` | `requirePlatformRole(['technician'])` |
+
+  - `requireRole(allowedRoles)` recibe **solo la lista** (un argumento) y devuelve el `ctx`. Usar `const ctx = await requireRole(['owner', 'manager'])` — no hace falta un `requireAuthContext()` aparte.
+  - `requireOwner(role)` es síncrono y recibe el rol: `const ctx = await requireAuthContext(); requireOwner(ctx.role)`.
+  - Denegación en la URL → redirect a `/` (técnico denegado → `/plataforma`). Las páginas de rutas owner-only repiten el chequeo como doble defensa.
+  - **`getFinancialReport` es la única excepción por scope:** `scope='current'` lo puede llamar un manager (alimenta `getDashboardStats` → Panel de Control); `scope='all'` y `scope=<uuid>` exigen owner.
+- **Server actions multi-tenant — OBLIGATORIO validar rol y tenant:**
+  - Toda server action de negocio **debe** empezar con `const ctx = await requireRole([...])` (manager+) o `const ctx = await requireAuthContext(); requireOwner(ctx.role)` (solo owner). Esto valida sesión + membrisía + rol en una sola línea.
   - **NUNCA** leer `profiles.role` directamente. El rol vive en `company_memberships.role` (multi-empresa).
-  - **NUNCA** detectar platform admin con `role = 'technician'`. Usar `profiles.is_platform_admin = true` (vía `isPlatformUser(userId)` o `requirePlatformRole(['technician'])`).
+  - **NUNCA** detectar platform admin con `role = 'technician'`. Usar `profiles.is_platform_admin = true` (vía `isPlatformUser(userId)` o `requirePlatformRole(['technician'])`). `'technician'` también es un rol válido de membresía de empresa, así que ese chequeo deja pasar a cualquiera con ese rol.
+  - El middleware enruta por rol leyendo el JWT: `app_metadata.is_platform_admin` y `app_metadata.role`. Esos claims los escriben `login()`, `switchActiveCompanyAction` y `switchActiveBranchAction` (espejo de `profiles` / `company_memberships`). Si cambiás el rol o `is_platform_admin` por otro camino, sincronizá el claim o el enrutar se desincroniza.
+- **Auditoría — OBLIGATORIO auditar toda mutación:**
+  - Toda server action que **escribe** en BD llama `audit(ctx, action, entityType, options)` (`lib/audit.ts`) tras el éxito. Los `SELECT` no se auditan.
+  - `audit()` **nunca lanza**: si el INSERT falla, la operación de negocio no se revierte. No condicionar el resultado de la acción a la auditoría.
+  - No enviar secretos en `payload`: se guarda en una columna `jsonb` legible por owners.
+  - Tabla `audit_log` (migración `fase-14-audit-log/`): RLS con `SELECT` solo para miembros de la empresa, escritura exclusiva de `service_role`.
 - **Resultados de server actions:** contrato canónico en `lib/errors.ts` (`ActionResult<T> = { success: true; data?: T } | { success: false; error; code }`).
   - Éxito: `return { success: true as const, data }`. Sin payload: `Promise<ActionResult<never>>`.
   - Fallo: `throw err('<AppErrorCode>', <detalle>, { userMessage })` y `return handleActionError(e, '<nombreAccion>')`. **No** devolver `{ success: false, error }` a mano: sin `code` el consumidor no puede clasificar.

@@ -3,6 +3,7 @@
 import { supabaseAdmin } from '../../../lib/supabase'
 import { requirePlatformRole } from '../../../lib/supabase/auth-helpers'
 import { handleActionError, err, type ActionResult } from '../../../lib/errors'
+import { audit } from '../../../lib/audit'
 
 /**
  * Crea una nueva empresa (tenant) con su configuración inicial.
@@ -142,6 +143,12 @@ export async function createCompany(payload: {
             // eslint-disable-next-line no-console
             console.log(`[createCompany] Invitación creada para ${payload.initialOwnerEmail}: ${invitation_url}`)
         }
+
+        await audit(ctx, 'createCompany', 'company', {
+          companyId: company.id,
+          entityId: company.id,
+          payload: { slug: payload.slug, trade_name: payload.trade_name, invited_owner: !!payload.initialOwnerEmail },
+        });
 
         return {
             success: true as const,
