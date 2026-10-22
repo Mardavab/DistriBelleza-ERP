@@ -77,6 +77,13 @@ Este archivo define reglas y contexto para todos los agentes/asistentes que trab
   - `audit()` **nunca lanza**: si el INSERT falla, la operación de negocio no se revierte. No condicionar el resultado de la acción a la auditoría.
   - No enviar secretos en `payload`: se guarda en una columna `jsonb` legible por owners.
   - Tabla `audit_log` (migración `fase-14-audit-log/`): RLS con `SELECT` solo para miembros de la empresa, escritura exclusiva de `service_role`.
+- **RPCs `SECURITY DEFINER` — OBLIGATORIO revocar `EXECUTE` a `anon` tras cada `CREATE`:**
+  - `pg_default_acl` en el esquema `public` otorga `EXECUTE` a `anon` sobre **toda función nueva**. `anon` es alcanzable sin login (la anon key es pública, está en `NEXT_PUBLIC_SUPABASE_ANON_KEY`).
+  - Como las RPCs `SECURITY DEFINER` corren con permisos de `postgres` y bypasean RLS, un caller anónimo podría mutar datos saltándose el middleware, las guardias de rol y la auditoría.
+  - Patrón: después de cada `CREATE OR REPLACE FUNCTION` en `public`, hacer `REVOKE EXECUTE ... FROM PUBLIC, anon` y `GRANT ... TO service_role`. Revocar de **ambos** (`anon` tiene grant explícito además del heredado de `PUBLIC`).
+  - Verificar con `has_function_privilege('anon', '<firma>', 'EXECUTE')`. Firmas con `pg_get_function_identity_arguments`, nunca a mano.
+  - Las server actions llaman las RPCs con `supabaseAdmin` (`service_role`), así que revocar `authenticated` no rompe nada. Excepción conocida: `accept_invitation` necesita `anon` porque `/accept-invitation` se ejecuta con el invitado sin sesión.
+  - Migración de referencia: `fase-16-harden-rpc-grants/`.
 - **Resultados de server actions:** contrato canónico en `lib/errors.ts` (`ActionResult<T> = { success: true; data?: T } | { success: false; error; code }`).
   - Éxito: `return { success: true as const, data }`. Sin payload: `Promise<ActionResult<never>>`.
   - Fallo: `throw err('<AppErrorCode>', <detalle>, { userMessage })` y `return handleActionError(e, '<nombreAccion>')`. **No** devolver `{ success: false, error }` a mano: sin `code` el consumidor no puede clasificar.

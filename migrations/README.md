@@ -31,6 +31,10 @@ migrations/
 │   ├── diagnose_fase1_state.sql                     # Diagnóstico detallado Fase 1
 │   └── cleanup_brutal_fase1.sql                    # Limpieza de emergencia Fase 1
 │
+├── fase-14-audit-log/                              # Auditoría de mutaciones + JWT is_platform_admin
+├── fase-15-fix-pos-rpcs/                           # Repara tenant_* contra el esquema real
+├── fase-16-harden-rpc-grants/                      # Revoca EXECUTE a anon en las RPCs
+│
 └── legacy/                                         # Schema original pre-multi-tenant
     ├── schema_pre_multitenant.sql
     ├── suppliers_migration.sql
@@ -56,12 +60,26 @@ psql "$DATABASE_URL" -f migrations/fase-X/20261003100000_*.sql
 
 - [x] Fase 0 — Backups y preparación
 - [x] Fase 1 — Schema aditivo (3 tablas, 16 columnas company_id, 15 FKs, 4 índices únicos, 2 triggers)
-- [ ] **Fase 2 — Backfill de `company_id`** ← estás aquí
-- [ ] Fase 3 — RPC parametrizadas
-- [ ] Fase 4 — Auth multi-tenant
-- [ ] Fase 5 — RLS real
-- [ ] Fase 6 — Branding y reglas
-- [ ] Fase 7 — Cleanup
+- [x] Fase 2 — Backfill de `company_id`
+- [x] Fase 3 — RPC parametrizadas
+- [x] Fase 4 — Auth multi-tenant
+- [x] Fase 5 — RLS real
+- [x] Fase 6 — Branding y reglas
+- [x] Fase 7 — Cleanup
+- [x] Fases 8–13 — Platform admin, gestión de empresas, multi-empresa (Fase 10), multi-sucursal (Fase 11), búsqueda, firma de `tenant_process_sale`
+- [x] **Fase 14** — `audit_log` (quién hizo qué y cuándo) + backfill `app_metadata.is_platform_admin`
+- [x] **Fase 15** — Repara `tenant_process_sale`, `tenant_delete_sale` y `tenant_search_inventory` contra el esquema real (dejaron el POS sin vender entre 2026-10-20 y 2026-10-22)
+- [x] **Fase 16** — Revoca `EXECUTE` a `anon` en las 8 RPCs `SECURITY DEFINER` de `public`
+
+> Las fases 14–16 se aplican con `supabase_apply_migration` (quedan en
+> `schema_migrations`). Las anteriores se aplicaron a mano por SQL Editor.
+
+## Regla transversal de las RPCs
+
+Toda función nueva en `public` **nace con `EXECUTE` para `anon`** (default
+privileges). Si es `SECURITY DEFINER`, hay que revocarlo después de crearla o un
+caller sin login puede mutar datos bypaseando RLS. Ver AGENTS.md §5 y
+`fase-16-harden-rpc-grants/README.md`.
 
 ## ⚠️ Fase 2 — Orden estricto y verificación
 
